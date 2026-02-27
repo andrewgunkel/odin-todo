@@ -1,9 +1,8 @@
-function Todo(title, description, dueDate, priority, project, notes, checklist, link, status) {
+function Todo(title, description, dueDate, priority, notes, checklist, link, status) {
 	this.title = title;
 	this.description = description;
 	this.dueDate = dueDate;
 	this.priority = priority;
-	this.project = project;
 	this.notes = notes;
 	this.checklist = checklist;
 	this.link = link;
