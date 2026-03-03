@@ -7,7 +7,6 @@ function Todo(title, description, dueDate, priority, notes, checklist, link, sta
 	this.checklist = checklist;
 	this.link = link;
 	this.status = status;
-	this.completed = false;
 	this.id = self.crypto.randomUUID();
 }
 
