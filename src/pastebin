@@ -19,3 +19,62 @@ project.addTodo(todo);
 
 console.log(project);
 console.log(project.todos);
+
+
+// Rendering library to DOM
+function renderLibrary() {
+	libraryContainer.innerHTML = "";
+
+	for (let i = 0; i < myLibrary.length; i++) {
+		const book = myLibrary[i];
+
+		const bookCard = document.createElement("div");
+		bookCard.classList.add("book-card", "card");
+
+		const bookTitle = document.createElement("h1");
+		const bookAuthor = document.createElement("h2");
+		const bookPageCount = document.createElement("p");
+		const bookRead = document.createElement("p");
+
+		bookTitle.textContent = book.title;
+		bookAuthor.textContent = "by " + book.author;
+		bookPageCount.textContent = "Pages: " + book.pages;
+		bookRead.textContent = "Status: " + book.read;
+
+		// Delete button
+		const btnDelete = document.createElement("button");
+		btnDelete.classList.add("delete-btn", "btn");
+
+		const deleteIcon = document.createElement("span");
+		deleteIcon.classList.add("material-symbols-outlined");
+		deleteIcon.textContent = "delete";
+		btnDelete.appendChild(deleteIcon);
+
+		// Read status button
+		const btnReadStatus = document.createElement("button");
+		btnReadStatus.classList.add("read-btn", "btn");
+
+		const readIcon = document.createElement("span");
+		readIcon.classList.add("material-symbols-outlined");
+		readIcon.textContent = "book";
+		btnReadStatus.appendChild(readIcon);
+
+		const cardActions = document.createElement("div");
+		cardActions.classList.add("card-actions");
+
+		cardActions.appendChild(btnReadStatus);
+		cardActions.appendChild(btnDelete);
+
+		bookCard.appendChild(bookTitle);
+		bookCard.appendChild(bookAuthor);
+		bookCard.appendChild(bookPageCount);
+		bookCard.appendChild(bookRead);
+		bookCard.appendChild(cardActions);
+
+		bookCard.dataset.id = book.id;
+
+		libraryContainer.appendChild(bookCard);
+	}
+
+	saveLibrary();
+}
