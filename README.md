@@ -9,7 +9,7 @@ The look of the User Interface is up to you, but it should be able to do the fol
 View all projects.
 View all todos in each project (probably just the title and duedate… perhaps changing color for different priorities).
 Expand a single todo to see/edit its details.
-Delete a todo.
+    Delete a todo.
 For inspiration, check out the following great todo apps. (look at screenshots, watch their introduction videos etc.)
 Todoist
 Things

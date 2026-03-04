@@ -1,3 +1,32 @@
-#todo-card {
-    background-color: red;
+input,
+button,
+select,
+textarea {
+    font-family: inherit;
+    color: inherit;
+}
+
+:root {
+    /* Palette */
+    --palette-light: #7CAFC4;
+    --palette-dark: #044389;
+    --palette-accent: #FCFF4B;
+    --palette-black: #001022;
+    --palette-white: #e1f3fa;
+}
+
+:root {
+    /* Semantic roles */
+    --color-background: var(--palette-light);
+    --color-text: var(--palette-dark);
+    --color-primary: var(--palette-accent);
+}
+
+body {
+    background-color: var(--palette-dark);
+}
+
+.todo-card {
+    background-color: var(--palette-light);
+    color: var(--palette-black);
 }
