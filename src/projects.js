@@ -18,8 +18,13 @@ Project.prototype.removeTodo = function(id) {
     this.todos = this.todos.filter(todo => todo.id !== id);
 };
 
+Project.prototype.editTodo = function(id, updatedFields) {
+	const todo = this.todos.find(todo => todo.id === id);
 
+	if (!todo) return;
 
+	Object.assign(todo, updatedFields);
+};
 
 //Project.prototype.removeTodo
 

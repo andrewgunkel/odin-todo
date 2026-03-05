@@ -6,6 +6,19 @@ textarea {
     color: inherit;
 }
 
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+	background-color: var(--palette-white);
+	color: #222;
+	padding: 2rem;
+}
+
 :root {
     /* Palette */
     --palette-light: #7CAFC4;
@@ -22,11 +35,54 @@ textarea {
     --color-primary: var(--palette-accent);
 }
 
-body {
-    background-color: var(--palette-dark);
+.todo-card h1:hover,
+.todo-card p:hover,
+.todo-card h2:hover,
+.todo-card h3:hover,
+.todo-card li:hover
+ {
+	background: #f3f3f3;
+	cursor: pointer;
 }
 
 .todo-card {
     background-color: var(--palette-light);
     color: var(--palette-black);
+    margin: 20px;
+    padding: 20px;
+}
+
+.todo-card ul {
+	list-style: none;
+	padding-left: 0;
+}
+
+.todo-card li {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.todo-card li input:checked + span {
+	text-decoration: line-through;
+	opacity: 0.6;
+}
+
+.todo-card ul input[type="text"] {
+	margin-top: 5px;
+	width: 100%;
+	border: none;
+	border-bottom: 1px solid #ccc;
+}
+
+.checklist-delete {
+	border: none;
+	background: transparent;
+	color: #999;
+	cursor: pointer;
+	font-size: 14px;
+}
+
+.checklist-delete:hover {
+	color: red;
 }

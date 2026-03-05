@@ -1,109 +1,234 @@
 import { Project } from "./projects.js";
-import { Todo } from "./todo.js";
+import { createTodoForm } from "./todo-form.js"; 
 
 console.log("test");
 
-const btnAddTodoForm = document.querySelector("#new-todo-form");
-const todoContainer = document.querySelector("#todo-container");
+const todoContainer = document.querySelector("#app");
+const formContainer = document.querySelector("#form-container");
+const addTodoBtn = document.querySelector("#add-todo-btn");
 
 function saveTodos() {
-    localStorage.setItem("todos", JSON.stringify(p.todos));
+	localStorage.setItem("todos", JSON.stringify(p.todos));
 }
 
 function loadTodos() {
-    const storedTodos = localStorage.getItem("todos");
+	const storedTodos = localStorage.getItem("todos");
+	if (!storedTodos) return;
 
-    if (!storedTodos) return;
+	const parsedTodos = JSON.parse(storedTodos);
 
-    const parsedTodos = JSON.parse(storedTodos);
+	parsedTodos.forEach(todo => {
 
-    p.todos = parsedTodos;
+		// convert old checklist string → checklist objects
+		if (typeof todo.checklist === "string") {
+
+			todo.checklist = todo.checklist
+				.split(",")
+				.map(item => ({
+					text: item.trim(),
+					completed: false
+				}));
+		}
+
+		if (!Array.isArray(todo.checklist)) {
+			todo.checklist = [];
+		}
+	});
+
+	p.todos = parsedTodos;
 }
 
 const p = new Project("Default", "Default project");
 window.p = p;
+
 loadTodos();
 renderTodos();
 
 console.log("Created project:", p);
 
+function makeEditable(element, todo, field, type = "text") {
 
+	element.addEventListener("click", () => {
 
-function renderTodos() {
-    todoContainer.innerHTML = "";
+		const input = document.createElement("input");
+		input.type = type;
+		input.value = todo[field];
 
-    p.todos.forEach((todo) => {
+		element.replaceWith(input);
+		input.focus();
 
-        const todoCard = document.createElement("div");
-        todoCard.classList.add("todo-card");
+		function saveEdit() {
 
-        const todoTitle = document.createElement("h1");
-        const todoDescription = document.createElement("p");
-        const todoDueDate = document.createElement("h2");
-        const todoPriority = document.createElement("h3");
-        const todoNotes = document.createElement("p");
-        const todoChecklist = document.createElement("ul");
-        const todoChecklistLi = document.createElement("li");
-        const todoLink = document.createElement("p");
-        const todoStatus = document.createElement("h2");
+			p.editTodo(todo.id, {
+				[field]: input.value
+			});
 
-        todoTitle.textContent = todo.title;
-        todoDescription.textContent = todo.description;
-        todoDueDate.textContent = "Due: " + todo.dueDate;
-        todoPriority.textContent = "Priority: " + todo.priority;
-        todoNotes.textContent = todo.notes;
-        todoLink.textContent = todo.referenceLink;
-        todoStatus.textContent = todo.status;
+			saveTodos();
+			renderTodos();
+		}
 
-        todoChecklistLi.textContent = todo.checklist;
-        todoChecklist.appendChild(todoChecklistLi);
+		input.addEventListener("blur", saveEdit);
 
-        todoCard.appendChild(todoTitle);
-        todoCard.appendChild(todoDescription);
-        todoCard.appendChild(todoDueDate);
-        todoCard.appendChild(todoPriority);
-        todoCard.appendChild(todoNotes);
-        todoCard.appendChild(todoChecklist);
-        todoCard.appendChild(todoLink);
-        todoCard.appendChild(todoStatus);
-
-        const btnDelete = document.createElement("button");
-        btnDelete.classList.add("delete-btn", "btn");
-        btnDelete.textContent = "Delete";
-        todoCard.appendChild(btnDelete);
-
-        btnDelete.addEventListener("click", () => {
-            p.removeTodo(todo.id);
-saveTodos();
-renderTodos();
-        });
-
-        todoCard.appendChild(btnDelete);
-
-        todoContainer.appendChild(todoCard);
-    });
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") input.blur();
+		});
+	});
 }
 
-btnAddTodoForm.addEventListener("submit", (event) => {
-    event.preventDefault();
+function renderTodos() {
 
-    const title = document.querySelector("#todo-title").value;
-    const description = document.querySelector("#todo-description").value;
-    const dueDate = document.querySelector("#todo-dueDate").value;
-    const priority = document.querySelector("#todo-priority").value;
-    const notes = document.querySelector("#todo-notes").value;
-    const checklist = document.querySelector("#todo-checklist").value;
-    const referenceLink = document.querySelector("#todo-link").value;
-    const status = document.querySelector("#todo-status").value;
+	todoContainer.innerHTML = "";
 
-    const todo = new Todo(title, description, dueDate, priority, notes, checklist, referenceLink, status);
+	p.todos.forEach((todo) => {
 
-    p.addTodo(todo);
-saveTodos();
-renderTodos();
+		const todoCard = document.createElement("div");
+		todoCard.classList.add("todo-card");
 
-    btnAddTodoForm.reset();
+		const todoTitle = document.createElement("h1");
+		const todoDescription = document.createElement("p");
+		const todoDueDate = document.createElement("h2");
+		const todoPriority = document.createElement("h3");
+		const todoNotes = document.createElement("p");
+		const todoChecklist = document.createElement("ul");
+		const todoLink = document.createElement("p");
+		const todoStatus = document.createElement("h2");
 
-    console.log(p);
+		todoTitle.textContent = todo.title;
+		todoDescription.textContent = todo.description;
+		todoDueDate.textContent = todo.dueDate ? "Due: " + todo.dueDate : "Set due date";
+		todoPriority.textContent = "Priority: " + todo.priority;
+		todoNotes.textContent = "Notes: " + todo.notes;
+		todoLink.textContent = "Link: " + todo.referenceLink;
+		todoStatus.textContent = todo.status;
 
+		makeEditable(todoTitle, todo, "title");
+		makeEditable(todoDescription, todo, "description");
+		makeEditable(todoNotes, todo, "notes");
+		makeEditable(todoPriority, todo, "priority");
+makeEditable(todoDueDate, todo, "dueDate", "date");
+		makeEditable(todoLink, todo, "referenceLink");
+		makeEditable(todoStatus, todo, "status");
+
+		// CHECKLIST RENDERING
+
+		if (!todo.checklist) {
+			todo.checklist = [];
+		}
+
+		todo.checklist.forEach((item, index) => {
+
+	const li = document.createElement("li");
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.checked = item.completed;
+
+	const label = document.createElement("span");
+	label.textContent = item.text;
+
+	// toggle completion
+	checkbox.addEventListener("change", () => {
+		item.completed = checkbox.checked;
+		saveTodos();
+	});
+
+	// edit checklist item
+	label.addEventListener("click", () => {
+
+		const input = document.createElement("input");
+		input.value = item.text;
+
+		label.replaceWith(input);
+		input.focus();
+
+		function saveChecklistEdit() {
+			item.text = input.value;
+			saveTodos();
+			renderTodos();
+		}
+
+		input.addEventListener("blur", saveChecklistEdit);
+
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") input.blur();
+		});
+	});
+
+	// DELETE BUTTON
+	const deleteItemBtn = document.createElement("button");
+	deleteItemBtn.textContent = "✕";
+	deleteItemBtn.classList.add("checklist-delete");
+
+	deleteItemBtn.addEventListener("click", () => {
+
+		todo.checklist.splice(index, 1);
+
+		saveTodos();
+		renderTodos();
+	});
+
+	li.appendChild(checkbox);
+	li.appendChild(label);
+	li.appendChild(deleteItemBtn);
+
+	todoChecklist.appendChild(li);
+});
+
+
+		// ADD CHECKLIST ITEM INPUT
+
+		const addChecklistInput = document.createElement("input");
+		addChecklistInput.placeholder = "+ add checklist item";
+
+		addChecklistInput.addEventListener("keydown", (e) => {
+
+			if (e.key === "Enter") {
+
+				e.preventDefault();
+
+				if (!addChecklistInput.value.trim()) return;
+
+				todo.checklist.push({
+					text: addChecklistInput.value.trim(),
+					completed: false
+				});
+
+				saveTodos();
+				renderTodos();
+			}
+		});
+
+		todoChecklist.appendChild(addChecklistInput);
+
+		// APPEND ELEMENTS
+
+		todoCard.appendChild(todoTitle);
+		todoCard.appendChild(todoDescription);
+		todoCard.appendChild(todoDueDate);
+		todoCard.appendChild(todoPriority);
+		todoCard.appendChild(todoNotes);
+		todoCard.appendChild(todoChecklist);
+		todoCard.appendChild(todoLink);
+		todoCard.appendChild(todoStatus);
+
+		// DELETE BUTTON
+
+		const btnDelete = document.createElement("button");
+		btnDelete.classList.add("delete-btn", "btn");
+		btnDelete.textContent = "Delete";
+
+		btnDelete.addEventListener("click", () => {
+			p.removeTodo(todo.id);
+			saveTodos();
+			renderTodos();
+		});
+
+		todoCard.appendChild(btnDelete);
+
+		todoContainer.appendChild(todoCard);
+	});
+}
+
+addTodoBtn.addEventListener("click", () => {
+	createTodoForm(formContainer, addTodoBtn, p, saveTodos, renderTodos);
 });
