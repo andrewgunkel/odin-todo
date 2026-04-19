@@ -6,45 +6,81 @@ console.log("test");
 const todoContainer = document.querySelector("#app");
 const formContainer = document.querySelector("#form-container");
 const addTodoBtn = document.querySelector("#add-todo-btn");
+const sidebar = document.querySelector("#sidebar");
 
-function saveTodos() {
-	localStorage.setItem("todos", JSON.stringify(p.todos));
+/* ======================
+   STATE
+====================== */
+
+const projects = [];
+let currentProjectId = null;
+
+window.projects = projects;
+
+/* ======================
+   STORAGE
+====================== */
+
+function saveProjects() {
+	localStorage.setItem("projects", JSON.stringify(projects));
 }
 
-function loadTodos() {
-	const storedTodos = localStorage.getItem("todos");
-	if (!storedTodos) return;
+function loadProjects() {
+	const stored = localStorage.getItem("projects");
+	if (!stored) return;
 
-	const parsedTodos = JSON.parse(storedTodos);
+	const parsed = JSON.parse(stored);
 
-	parsedTodos.forEach(todo => {
+	parsed.forEach(project => {
 
-		// convert old checklist string → checklist objects
-		if (typeof todo.checklist === "string") {
+		project.todos.forEach(todo => {
 
-			todo.checklist = todo.checklist
-				.split(",")
-				.map(item => ({
-					text: item.trim(),
-					completed: false
-				}));
-		}
+			// fix old checklist format
+			if (typeof todo.checklist === "string") {
+				todo.checklist = todo.checklist
+					.split(",")
+					.map(item => ({
+						text: item.trim(),
+						completed: false
+					}));
+			}
 
-		if (!Array.isArray(todo.checklist)) {
-			todo.checklist = [];
-		}
+			if (!Array.isArray(todo.checklist)) {
+				todo.checklist = [];
+			}
+		});
 	});
 
-	p.todos = parsedTodos;
+	projects.push(...parsed);
+
+	currentProjectId = projects[0]?.id;
 }
 
-const p = new Project("Default", "Default project");
-window.p = p;
+/* ======================
+   INIT
+====================== */
 
-loadTodos();
+if (projects.length === 0) {
+	const defaultProject = new Project("Default", "Default project");
+	projects.push(defaultProject);
+	currentProjectId = defaultProject.id;
+}
+
+loadProjects();
+renderProjects();
 renderTodos();
 
-console.log("Created project:", p);
+/* ======================
+   HELPERS
+====================== */
+
+function getCurrentProject() {
+	return projects.find(p => p.id === currentProjectId);
+}
+
+/* ======================
+   EDITABLE FIELDS
+====================== */
 
 function makeEditable(element, todo, field, type = "text") {
 
@@ -59,11 +95,11 @@ function makeEditable(element, todo, field, type = "text") {
 
 		function saveEdit() {
 
-			p.editTodo(todo.id, {
+			getCurrentProject().editTodo(todo.id, {
 				[field]: input.value
 			});
 
-			saveTodos();
+			saveProjects();
 			renderTodos();
 		}
 
@@ -75,11 +111,42 @@ function makeEditable(element, todo, field, type = "text") {
 	});
 }
 
+/* ======================
+   RENDER
+====================== */
+
+function renderProjects() {
+	sidebar.innerHTML = "";
+
+	projects.forEach(project => {
+
+		const item = document.createElement("div");
+		item.textContent = project.title;
+		item.classList.add("project-item");
+
+		if (project.id === currentProjectId) {
+			item.classList.add("active");
+		}
+
+		item.addEventListener("click", () => {
+			currentProjectId = project.id;
+			renderTodos();
+			renderProjects();
+			saveProjects();
+		});
+
+		sidebar.appendChild(item);
+	});
+}
+
 function renderTodos() {
+
+	const project = getCurrentProject();
+	if (!project) return;
 
 	todoContainer.innerHTML = "";
 
-	p.todos.forEach((todo) => {
+	project.todos.forEach((todo) => {
 
 		const todoCard = document.createElement("div");
 		todoCard.classList.add("todo-card");
@@ -105,77 +172,71 @@ function renderTodos() {
 		makeEditable(todoDescription, todo, "description");
 		makeEditable(todoNotes, todo, "notes");
 		makeEditable(todoPriority, todo, "priority");
-makeEditable(todoDueDate, todo, "dueDate", "date");
+		makeEditable(todoDueDate, todo, "dueDate", "date");
 		makeEditable(todoLink, todo, "referenceLink");
 		makeEditable(todoStatus, todo, "status");
 
-		// CHECKLIST RENDERING
+		// CHECKLIST
 
-		if (!todo.checklist) {
-			todo.checklist = [];
-		}
+		if (!Array.isArray(todo.checklist)) {
+	todo.checklist = [];
+}
 
 		todo.checklist.forEach((item, index) => {
 
-	const li = document.createElement("li");
+			const li = document.createElement("li");
 
-	const checkbox = document.createElement("input");
-	checkbox.type = "checkbox";
-	checkbox.checked = item.completed;
+			const checkbox = document.createElement("input");
+			checkbox.type = "checkbox";
+			checkbox.checked = item.completed;
 
-	const label = document.createElement("span");
-	label.textContent = item.text;
+			const label = document.createElement("span");
+			label.textContent = item.text;
 
-	// toggle completion
-	checkbox.addEventListener("change", () => {
-		item.completed = checkbox.checked;
-		saveTodos();
-	});
+			checkbox.addEventListener("change", () => {
+				item.completed = checkbox.checked;
+				saveProjects();
+			});
 
-	// edit checklist item
-	label.addEventListener("click", () => {
+			label.addEventListener("click", () => {
 
-		const input = document.createElement("input");
-		input.value = item.text;
+				const input = document.createElement("input");
+				input.value = item.text;
 
-		label.replaceWith(input);
-		input.focus();
+				label.replaceWith(input);
+				input.focus();
 
-		function saveChecklistEdit() {
-			item.text = input.value;
-			saveTodos();
-			renderTodos();
-		}
+				function saveChecklistEdit() {
+					item.text = input.value;
+					saveProjects();
+					renderTodos();
+				}
 
-		input.addEventListener("blur", saveChecklistEdit);
+				input.addEventListener("blur", saveChecklistEdit);
 
-		input.addEventListener("keydown", (e) => {
-			if (e.key === "Enter") input.blur();
+				input.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") input.blur();
+				});
+			});
+
+			const deleteItemBtn = document.createElement("button");
+			deleteItemBtn.textContent = "✕";
+			deleteItemBtn.classList.add("checklist-delete");
+
+			deleteItemBtn.addEventListener("click", () => {
+				todo.checklist.splice(index, 1);
+				saveProjects();
+				renderTodos();
+			});
+
+			li.appendChild(checkbox);
+			li.appendChild(label);
+			li.appendChild(deleteItemBtn);
+
+			todoChecklist.appendChild(li);
 		});
-	});
 
-	// DELETE BUTTON
-	const deleteItemBtn = document.createElement("button");
-	deleteItemBtn.textContent = "✕";
-	deleteItemBtn.classList.add("checklist-delete");
-
-	deleteItemBtn.addEventListener("click", () => {
-
-		todo.checklist.splice(index, 1);
-
-		saveTodos();
-		renderTodos();
-	});
-
-	li.appendChild(checkbox);
-	li.appendChild(label);
-	li.appendChild(deleteItemBtn);
-
-	todoChecklist.appendChild(li);
-});
-
-
-		// ADD CHECKLIST ITEM INPUT
+		// ADD CHECKLIST ITEM
 
 		const addChecklistInput = document.createElement("input");
 		addChecklistInput.placeholder = "+ add checklist item";
@@ -193,14 +254,14 @@ makeEditable(todoDueDate, todo, "dueDate", "date");
 					completed: false
 				});
 
-				saveTodos();
+				saveProjects();
 				renderTodos();
 			}
 		});
 
 		todoChecklist.appendChild(addChecklistInput);
 
-		// APPEND ELEMENTS
+		// APPEND
 
 		todoCard.appendChild(todoTitle);
 		todoCard.appendChild(todoDescription);
@@ -211,15 +272,15 @@ makeEditable(todoDueDate, todo, "dueDate", "date");
 		todoCard.appendChild(todoLink);
 		todoCard.appendChild(todoStatus);
 
-		// DELETE BUTTON
+		// DELETE TODO
 
 		const btnDelete = document.createElement("button");
 		btnDelete.classList.add("delete-btn", "btn");
 		btnDelete.textContent = "Delete";
 
 		btnDelete.addEventListener("click", () => {
-			p.removeTodo(todo.id);
-			saveTodos();
+			getCurrentProject().removeTodo(todo.id);
+			saveProjects();
 			renderTodos();
 		});
 
@@ -229,6 +290,16 @@ makeEditable(todoDueDate, todo, "dueDate", "date");
 	});
 }
 
+/* ======================
+   EVENTS
+====================== */
+
 addTodoBtn.addEventListener("click", () => {
-	createTodoForm(formContainer, addTodoBtn, p, saveTodos, renderTodos);
+	createTodoForm(
+		formContainer,
+		addTodoBtn,
+		getCurrentProject(),
+		saveProjects,
+		renderTodos
+	);
 });

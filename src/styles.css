@@ -86,3 +86,35 @@ body {
 .checklist-delete:hover {
 	color: red;
 }
+
+#layout {
+	display: flex;
+	height: 100vh;
+}
+
+#sidebar {
+	width: 200px;
+	background: var(--palette-dark);
+	color: white;
+	padding: 1rem;
+}
+
+#main {
+	flex: 1;
+	padding: 1rem;
+}
+
+.project-item {
+	padding: 8px;
+	cursor: pointer;
+	border-radius: 4px;
+}
+
+.project-item:hover {
+	background: rgba(255,255,255,0.2);
+}
+
+.project-item.active {
+	background: var(--palette-accent);
+	color: black;
+}

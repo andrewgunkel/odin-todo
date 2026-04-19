@@ -79,16 +79,23 @@ function createTodoForm(formContainer, addTodoBtn, project, saveTodos, renderTod
 
 		event.preventDefault();
 
-		const todo = new Todo(
-			title.input.value,
-			description.input.value,
-			dueDate.input.value,
-			priority.input.value,
-			notes.input.value,
-			checklist.input.value,
-			link.input.value,
-			status.input.value
-		);
+		const checklistArray = checklist.input.value
+	? checklist.input.value.split(",").map(item => ({
+		text: item.trim(),
+		completed: false
+	}))
+	: [];
+
+const todo = new Todo(
+	title.input.value,
+	description.input.value,
+	dueDate.input.value,
+	priority.input.value,
+	notes.input.value,
+	checklistArray,   // ✅ FIXED
+	link.input.value,
+	status.input.value
+);
 
 		project.addTodo(todo);
 
