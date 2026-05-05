@@ -19,6 +19,7 @@ let currentProjectId = null;
 window.projects = projects;
 
 let sortBy = "default"; // default | priority | createdAt | updatedAt | dueDate
+let sortDir = "asc"; // asc | desc
 
 let columns = [
 	{ id: "col-1", label: "Not Started", isCompleted: false, color: "#6b7280" },
@@ -329,6 +330,16 @@ function renderTodos() {
 		sortBar.appendChild(btn);
 	});
 
+	const dirBtn = document.createElement("button");
+	dirBtn.classList.add("sort-dir-btn");
+	dirBtn.title = sortDir === "asc" ? "Sort ascending" : "Sort descending";
+	dirBtn.textContent = sortDir === "asc" ? "↑" : "↓";
+	dirBtn.addEventListener("click", () => {
+		sortDir = sortDir === "asc" ? "desc" : "asc";
+		renderTodos();
+	});
+	sortBar.appendChild(dirBtn);
+
 	sortBarContainer.innerHTML = "";
 	sortBarContainer.appendChild(sortBar);
 
@@ -489,21 +500,19 @@ function renderTodos() {
 	const PRIORITY_RANK = { High: 0, Medium: 1, Low: 2 };
 
 	const sortedTodos = [...project.todos].sort((a, b) => {
+		let result = 0;
 		if (sortBy === "priority") {
-			return (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
-		}
-		if (sortBy === "createdAt") {
-			return (a.createdAt ?? 0) - (b.createdAt ?? 0);
-		}
-		if (sortBy === "updatedAt") {
-			return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
-		}
-		if (sortBy === "dueDate") {
+			result = (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3);
+		} else if (sortBy === "createdAt") {
+			result = (a.createdAt ?? 0) - (b.createdAt ?? 0);
+		} else if (sortBy === "updatedAt") {
+			result = (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
+		} else if (sortBy === "dueDate") {
 			const da = a.dueDate ? new Date(a.dueDate) : new Date("9999-12-31");
 			const db = b.dueDate ? new Date(b.dueDate) : new Date("9999-12-31");
-			return da - db;
+			result = da - db;
 		}
-		return 0;
+		return sortDir === "desc" ? -result : result;
 	});
 
 	sortedTodos.forEach((todo) => {

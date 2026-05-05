@@ -47,8 +47,8 @@ body {
 
     /* Priority accent colours — low=blue, medium=pink, high=red */
     --md-priority-low:    #1976d2;
-    --md-priority-medium: #d81b60;
-    --md-priority-high:   #c62828;
+    --md-priority-medium: #00bcd4;
+    --md-priority-high:   #e91e8c;
 
     /* Chip defaults */
     --md-chip-bg: #f1f3f4;
@@ -1017,37 +1017,59 @@ body {
     font-family: inherit;
     padding: 3px 10px;
     border-radius: 999px;
-    border: 1px solid var(--md-outline);
+    border: none;
     background: transparent;
     color: var(--md-text-secondary);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition: background 0.15s, color 0.15s;
 }
 
 .sort-btn:hover {
-    background: var(--md-surface-variant);
     color: var(--md-text-primary);
 }
 
 .sort-btn.active {
-    background: var(--md-primary);
-    border-color: var(--md-primary);
+    background: var(--palette-dark);
     color: #fff;
 }
 
 [data-theme="dark"] .sort-btn {
-    border-color: #3a3852;
     color: #b0adc8;
 }
 
 [data-theme="dark"] .sort-btn:hover {
-    background: rgba(157, 143, 255, 0.1);
     color: #e0deff;
 }
 
 [data-theme="dark"] .sort-btn.active {
     background: #6c63ff;
-    border-color: #6c63ff;
+    color: #fff;
+}
+
+.sort-dir-btn {
+    font-size: 0.9rem;
+    font-family: inherit;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: none;
+    background: transparent;
+    color: var(--md-text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.sort-dir-btn:hover {
+    background: var(--palette-dark);
+    color: #fff;
+}
+
+[data-theme="dark"] .sort-dir-btn {
+    color: #b0adc8;
+}
+
+[data-theme="dark"] .sort-dir-btn:hover {
+    background: #6c63ff;
     color: #fff;
 }
 
