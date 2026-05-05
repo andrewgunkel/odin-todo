@@ -1138,3 +1138,194 @@ body {
     background: rgba(108, 99, 255, 0.12);
     outline-color: #6c63ff;
 }
+
+/* ======================
+   HAMBURGER BUTTON
+====================== */
+
+#sidebar-toggle-btn {
+    display: none;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 0;
+    position: relative;
+    transition: background 0.15s;
+}
+
+#sidebar-toggle-btn:hover {
+    background: rgba(4, 67, 137, 0.08);
+}
+
+#sidebar-toggle-btn::before,
+#sidebar-toggle-btn::after,
+#sidebar-toggle-btn span {
+    content: "";
+    display: block;
+    position: absolute;
+    left: 8px;
+    width: 20px;
+    height: 2px;
+    background: var(--palette-dark);
+    border-radius: 2px;
+    transition: transform 0.2s, opacity 0.2s, top 0.2s;
+}
+
+#sidebar-toggle-btn::before { top: 11px; }
+#sidebar-toggle-btn span   { top: 17px; }
+#sidebar-toggle-btn::after { top: 23px; }
+
+[data-theme="dark"] #sidebar-toggle-btn::before,
+[data-theme="dark"] #sidebar-toggle-btn::after,
+[data-theme="dark"] #sidebar-toggle-btn span {
+    background: #e0deff;
+}
+
+[data-theme="dark"] #sidebar-toggle-btn:hover {
+    background: rgba(157, 143, 255, 0.1);
+}
+
+/* ======================
+   SIDEBAR BACKDROP
+====================== */
+
+#sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 19;
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+/* ======================
+   RESPONSIVE
+====================== */
+
+/* ── Tablet (≤ 900px) — narrower sidebar ── */
+@media (max-width: 900px) {
+    :root {
+        --md-nav-width: 200px;
+    }
+
+    .kanban-column {
+        flex: 0 0 260px;
+    }
+
+    #app {
+        padding: 16px;
+        gap: 12px;
+    }
+}
+
+/* ── Mobile (≤ 640px) — sidebar becomes a drawer ── */
+@media (max-width: 640px) {
+    /* Show hamburger, hide normal sidebar positioning */
+    #sidebar-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    #sidebar-backdrop {
+        display: block;
+    }
+
+    #sidebar-backdrop.visible {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Sidebar slides in as an overlay drawer */
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100dvh;
+        z-index: 20;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+        width: 240px;
+        min-width: 240px;
+    }
+
+    #sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Main takes full width */
+    #main {
+        width: 100%;
+    }
+
+    #main-header {
+        padding: 0 12px;
+        gap: 8px;
+    }
+
+    #project-title {
+        font-size: 0.95rem;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    #add-todo-btn {
+        padding: 8px 14px;
+        font-size: 0.8rem;
+    }
+
+    /* Sort bar wraps */
+    .sort-bar {
+        flex-wrap: wrap;
+        padding: 8px 12px 4px;
+        gap: 4px;
+    }
+
+    /* Kanban: full-width stacked columns */
+    #app {
+        flex-direction: column;
+        overflow-x: hidden;
+        padding: 12px;
+        gap: 20px;
+        min-height: unset;
+    }
+
+    .kanban-column {
+        flex: none;
+        width: 100%;
+    }
+
+    .kanban-add-col {
+        width: 100%;
+        flex: none;
+    }
+
+    /* Form: single column */
+    #form-container {
+        padding: 0 12px;
+    }
+
+    #new-todo-form {
+        grid-template-columns: 1fr;
+        padding: 16px;
+    }
+
+    #new-todo-form::before {
+        grid-column: span 1;
+    }
+
+    #new-todo-form .form-group:nth-child(1),
+    #new-todo-form .form-group:nth-child(2),
+    #new-todo-form .form-group:nth-child(5),
+    #new-todo-form .form-group:nth-child(6) {
+        grid-column: span 1;
+    }
+}

@@ -8,6 +8,18 @@ const sidebar = document.querySelector("#sidebar");
 const projectTitle = document.querySelector("#project-title");
 const themeToggleBtn = document.querySelector("#theme-toggle-btn");
 const sortBarContainer = document.querySelector("#sort-bar-container");
+const sidebarToggleBtn = document.querySelector("#sidebar-toggle-btn");
+const sidebarBackdrop = document.querySelector("#sidebar-backdrop");
+
+sidebarToggleBtn.addEventListener("click", () => {
+	sidebar.classList.toggle("open");
+	sidebarBackdrop.classList.toggle("visible");
+});
+
+sidebarBackdrop.addEventListener("click", () => {
+	sidebar.classList.remove("open");
+	sidebarBackdrop.classList.remove("visible");
+});
 
 /* ======================
    STATE
