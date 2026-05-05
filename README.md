@@ -1,6 +1,30 @@
-Project: Todo List
-Link to project brief: https://www.theodinproject.com/lessons/node-path-javascript-todo-list
-Author: Andrew Gunkel
+ ________  ___  ___  ___  ___  ___       ___  ________  _________   
+|\__    _\|\  \|\  \|\  \|\  \|\  \     |\  \|\   ____\|\___   ___\ 
+\|_ \  \_\ \  \\\  \ \  \ \  \ \  \    \ \  \ \  \___|\|___ \  \_| 
+    \ \  \ \ \  \\\  \ \  \ \  \ \  \  __\ \  \ \_____  \   \ \  \ 
+     \ \  \ \ \  \\\  \ \  \_\  \ \  \|\__\_\  \|____|\  \   \ \  \
+      \ \__\ \ \_______\ \_______\ \____________\____\_\  \   \ \__\
+       \|__|  \|_______|\|_______|\|____________|\_________\   \|__|
+                                                \|_________|        
 
-Live view:
-https://andrewgunkel.github.io/odin-todo/
+-----------------------------------------------
+  _____ _           ___     _ _        ___          _        _   
+ |_   _| |_  ___   / _ \ __| (_)_ _   | _ \_ _ ___ (_)___ __| |_ 
+   | | | ' \/ -_) | (_) / _` | | ' \  |  _/ '_/ _ \| / -_) _|  _|
+   |_| |_||_\___|  \___/\__,_|_|_||_| |_| |_| \___// \___\__|\__|
+                                                    |__/            
+
+---
+
+## Project
+
+**Todo List** — The Odin Project
+
+## Links
+
+- [Project Brief](https://www.theodinproject.com/lessons/node-path-javascript-todo-list)
+- [Live Demo](https://andrewgunkel.github.io/odin-todo/)
+
+## Author
+
+[Andrew Gunkel](https://github.com/andrewgunkel)
