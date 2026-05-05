@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css?family=" rel="stylesheet" type="text/css">
-    <!--<link rel="icon" type="image/svg+xml" href="images/favicon.svg">-->
-    <title></title>
+    <title>Todo List</title>
 </head>
 <body>
 
@@ -14,8 +12,15 @@
 	<div id="sidebar"></div>
 
 	<div id="main">
-		<button id="add-todo-btn">Add Todo</button>
+		<div id="main-header">
+			<h2 id="project-title"></h2>
+			<div id="header-actions">
+				<button id="add-todo-btn">+ Add Todo</button>
+				<button id="theme-toggle-btn" title="Switch to dark mode"></button>
+			</div>
+		</div>
 		<div id="form-container"></div>
+		<div id="sort-bar-container"></div>
 		<div id="app"></div>
 	</div>
 </div>

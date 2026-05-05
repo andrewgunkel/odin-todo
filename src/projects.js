@@ -24,6 +24,7 @@ Project.prototype.editTodo = function(id, updatedFields) {
 	if (!todo) return;
 
 	Object.assign(todo, updatedFields);
+	todo.updatedAt = Date.now();
 };
 
 //Project.prototype.removeTodo

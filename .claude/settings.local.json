@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm start *)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Bash(npm run *)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
