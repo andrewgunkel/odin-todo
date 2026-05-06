@@ -1,6 +1,7 @@
 import { Project } from "./projects.js";
 import { Todo } from "./todo.js";
 import { createTodoForm } from "./todo-form.js";
+import { supabase, signOut } from "./auth.js";
 
 const todoContainer = document.querySelector("#app");
 const formContainer = document.querySelector("#form-container");
@@ -506,6 +507,49 @@ function buildTodoCard(todo, ctx) {
 	btnDelete.title = "Delete todo";
 	btnDelete.addEventListener("click", ctx.delete);
 
+	// MOVE TO EPIC
+	const epicBtn = document.createElement("button");
+	epicBtn.classList.add("move-epic-btn");
+	epicBtn.title = "Assign to epic";
+
+	if (!ctx.isInbox) {
+		const proj = getCurrentProject();
+		if (proj && proj.epics && proj.epics.length > 0) {
+			epicBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				const select = document.createElement("select");
+				select.classList.add("move-epic-select");
+
+				const noEpicOpt = document.createElement("option");
+				noEpicOpt.value = "";
+				noEpicOpt.textContent = "No Epic";
+				if (!todo.epicId) noEpicOpt.selected = true;
+				select.appendChild(noEpicOpt);
+
+				proj.epics.forEach(epic => {
+					const opt = document.createElement("option");
+					opt.value = epic.id;
+					opt.textContent = epic.title;
+					if (todo.epicId === epic.id) opt.selected = true;
+					select.appendChild(opt);
+				});
+
+				epicBtn.replaceWith(select);
+				select.focus();
+
+				function commitEpicMove() {
+					todo.epicId = select.value || null;
+					ctx.save();
+				}
+
+				select.addEventListener("change", commitEpicMove);
+				select.addEventListener("blur", () => {
+					select.replaceWith(epicBtn);
+				});
+			});
+		}
+	}
+
 	// MOVE TO PROJECT
 	const moveBtn = document.createElement("button");
 	moveBtn.classList.add("move-project-btn");
@@ -599,6 +643,10 @@ function buildTodoCard(todo, ctx) {
 	const todoHeader = document.createElement("div");
 	todoHeader.classList.add("todo-header");
 	todoHeader.appendChild(todoTitle);
+	if (!ctx.isInbox) {
+		const proj = getCurrentProject();
+		if (proj && proj.epics && proj.epics.length > 0) todoHeader.appendChild(epicBtn);
+	}
 	todoHeader.appendChild(moveBtn);
 	todoHeader.appendChild(btnDelete);
 
@@ -1017,7 +1065,7 @@ function renderSelectionBar() {
 	moveSelect.classList.add("selection-select");
 	const moveDefault = document.createElement("option");
 	moveDefault.value = "";
-	moveDefault.textContent = "Move to▼";
+	moveDefault.textContent = "Move to";
 	moveSelect.appendChild(moveDefault);
 	projects.forEach(p => {
 		if (currentView === "project" && p.id === currentProjectId) return;
@@ -1062,7 +1110,7 @@ function renderSelectionBar() {
 	prioritySelect.classList.add("selection-select");
 	const priDefault = document.createElement("option");
 	priDefault.value = "";
-	priDefault.textContent = "Priority▼";
+	priDefault.textContent = "Priority";
 	prioritySelect.appendChild(priDefault);
 	["Low", "Medium", "High"].forEach(p => {
 		const opt = document.createElement("option");
@@ -1081,7 +1129,7 @@ function renderSelectionBar() {
 	statusSelect.classList.add("selection-select");
 	const statDefault = document.createElement("option");
 	statDefault.value = "";
-	statDefault.textContent = "Status▼";
+	statDefault.textContent = "Status";
 	statusSelect.appendChild(statDefault);
 	getColumnLabels().forEach(l => {
 		const opt = document.createElement("option");
@@ -1259,7 +1307,10 @@ function renderSwimlaneTodos(project) {
 				if (epic) {
 					epic.collapsed = !epic.collapsed;
 					saveProjects();
-					renderTodos();
+					collapseBtn.textContent = epic.collapsed ? "▶" : "▼";
+					swimlane.classList.toggle("collapsed", epic.collapsed);
+					const board = swimlane.querySelector(".swimlane-board");
+					if (board) board.style.display = epic.collapsed ? "none" : "";
 				}
 			});
 			header.appendChild(collapseBtn);
@@ -1330,18 +1381,16 @@ function renderSwimlaneTodos(project) {
 
 		swimlane.appendChild(header);
 
-		if (!collapsed) {
-			const board = document.createElement("div");
-			board.classList.add("swimlane-board");
+		const board = document.createElement("div");
+		board.classList.add("swimlane-board");
+		if (collapsed) board.style.display = "none";
 
-			columns.forEach(col => {
-				const { column } = buildKanbanColumn(col, project, isNoEpic ? null : epicId, true);
-				board.appendChild(column);
-			});
+		columns.forEach(col => {
+			const { column } = buildKanbanColumn(col, project, isNoEpic ? null : epicId, true);
+			board.appendChild(column);
+		});
 
-			swimlane.appendChild(board);
-		}
-
+		swimlane.appendChild(board);
 		todoContainer.appendChild(swimlane);
 	};
 
@@ -1698,6 +1747,7 @@ function renderInbox() {
 	addTodoBtn.style.display = "none";
 	todoContainer.innerHTML = "";
 	todoContainer.classList.remove("swimlane-mode");
+	todoContainer.classList.remove("overview-view");
 	projectTitle.textContent = "Inbox";
 
 	projectTabsContainer.innerHTML = "";
@@ -1769,7 +1819,178 @@ function renderInbox() {
 	renderSelectionBar();
 }
 
+/* ======================
+   OVERVIEW
+====================== */
+
+function renderOverview() {
+	addTodoBtn.style.display = "none";
+	todoContainer.innerHTML = "";
+	todoContainer.classList.remove("swimlane-mode");
+	todoContainer.classList.add("overview-view");
+	projectTitle.textContent = "Overview";
+	projectTabsContainer.innerHTML = "";
+	sortBarContainer.innerHTML = "";
+
+	const completedLabels = columns.filter(c => c.isCompleted).map(c => c.label);
+	const now = Date.now();
+	const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+	const allProjectTodos = projects.flatMap(p => p.todos);
+	const allTodos = [...allProjectTodos, ...inbox];
+
+	const totalCount = allTodos.length;
+	const completedCount = allTodos.filter(t => completedLabels.includes(t.status)).length;
+	const highPriorityCount = allTodos.filter(t => (t.priority || "").toLowerCase() === "high").length;
+	const overdueCount = allTodos.filter(t => {
+		if (!t.dueDate || completedLabels.includes(t.status)) return false;
+		return new Date(t.dueDate).getTime() < now;
+	}).length;
+
+	// Stats row
+	const statsRow = document.createElement("div");
+	statsRow.classList.add("overview-stats-row");
+
+	[
+		{ label: "Total", value: totalCount },
+		{ label: "Completed", value: completedCount },
+		{ label: "High Priority", value: highPriorityCount },
+		{ label: "Overdue", value: overdueCount },
+		{ label: "In Inbox", value: inbox.length },
+	].forEach(stat => {
+		const card = document.createElement("div");
+		card.classList.add("overview-stat-card");
+		if (stat.label === "Overdue" && overdueCount > 0) card.classList.add("is-overdue");
+		const val = document.createElement("div");
+		val.classList.add("overview-stat-value");
+		val.textContent = stat.value;
+		const lbl = document.createElement("div");
+		lbl.classList.add("overview-stat-label");
+		lbl.textContent = stat.label;
+		card.append(val, lbl);
+		statsRow.appendChild(card);
+	});
+
+	todoContainer.appendChild(statsRow);
+
+	// Per-project section
+	if (projects.length > 0) {
+		const projSection = document.createElement("div");
+		projSection.classList.add("overview-section");
+		const projHeading = document.createElement("h3");
+		projHeading.classList.add("overview-section-title");
+		projHeading.textContent = "Projects";
+		projSection.appendChild(projHeading);
+
+		const projGrid = document.createElement("div");
+		projGrid.classList.add("overview-projects-grid");
+
+		projects.forEach(project => {
+			const todos = project.todos;
+			const total = todos.length;
+			const done = todos.filter(t => completedLabels.includes(t.status)).length;
+			const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+			const projCard = document.createElement("div");
+			projCard.classList.add("overview-project-card");
+			projCard.addEventListener("click", () => {
+				currentProjectId = project.id;
+				currentView = "project";
+				currentProjectTab = "board";
+				selectedTodos.clear();
+				renderTodos();
+				renderProjects();
+			});
+
+			const projName = document.createElement("div");
+			projName.classList.add("overview-project-name");
+			projName.textContent = project.title;
+
+			const progressRow = document.createElement("div");
+			progressRow.classList.add("overview-progress-row");
+
+			const bar = document.createElement("div");
+			bar.classList.add("overview-progress-bar");
+			const fill = document.createElement("div");
+			fill.classList.add("overview-progress-fill");
+			fill.style.width = `${pct}%`;
+			bar.appendChild(fill);
+
+			const pctLabel = document.createElement("span");
+			pctLabel.classList.add("overview-progress-label");
+			pctLabel.textContent = `${done}/${total}`;
+
+			progressRow.append(bar, pctLabel);
+
+			const statusRow = document.createElement("div");
+			statusRow.classList.add("overview-status-row");
+
+			columns.forEach(col => {
+				const count = todos.filter(t => t.status === col.label).length;
+				if (count === 0) return;
+				const chip = document.createElement("span");
+				chip.classList.add("overview-status-chip");
+				chip.style.setProperty("--chip-color", col.isCompleted ? "#9e9e9e" : col.color);
+				chip.textContent = `${col.label} ${count}`;
+				statusRow.appendChild(chip);
+			});
+
+			projCard.append(projName, progressRow, statusRow);
+			projGrid.appendChild(projCard);
+		});
+
+		projSection.appendChild(projGrid);
+		todoContainer.appendChild(projSection);
+	}
+
+	// Due soon section
+	const dueSoon = allTodos.filter(t => {
+		if (!t.dueDate || completedLabels.includes(t.status)) return false;
+		const due = new Date(t.dueDate).getTime();
+		return due >= now && due <= now + sevenDaysMs;
+	}).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+	if (dueSoon.length > 0) {
+		const dueSection = document.createElement("div");
+		dueSection.classList.add("overview-section");
+		const dueHeading = document.createElement("h3");
+		dueHeading.classList.add("overview-section-title");
+		dueHeading.textContent = "Due in the next 7 days";
+		dueSection.appendChild(dueHeading);
+
+		const dueList = document.createElement("div");
+		dueList.classList.add("overview-due-list");
+
+		dueSoon.forEach(todo => {
+			const item = document.createElement("div");
+			item.classList.add("overview-due-item");
+
+			const titleEl = document.createElement("span");
+			titleEl.classList.add("overview-due-title");
+			titleEl.textContent = todo.title || "(Untitled)";
+
+			const ownerProject = projects.find(p => p.todos.some(t => t.id === todo.id));
+			const contextEl = document.createElement("span");
+			contextEl.classList.add("overview-due-context");
+			contextEl.textContent = ownerProject ? ownerProject.title : "Inbox";
+
+			const dateEl = document.createElement("span");
+			dateEl.classList.add("overview-due-date");
+			dateEl.textContent = todo.dueDate;
+
+			item.append(titleEl, contextEl, dateEl);
+			dueList.appendChild(item);
+		});
+
+		dueSection.appendChild(dueList);
+		todoContainer.appendChild(dueSection);
+	}
+
+	renderSelectionBar();
+}
+
 function renderTodos() {
+	if (currentView === "overview") { renderOverview(); return; }
 	if (currentView === "inbox") { renderInbox(); return; }
 
 	const project = getCurrentProject();
@@ -1781,6 +2002,7 @@ function renderTodos() {
 	addTodoBtn.style.display = "";
 	todoContainer.innerHTML = "";
 	todoContainer.classList.remove("swimlane-mode");
+	todoContainer.classList.remove("overview-view");
 	projectTitle.textContent = project.title;
 
 	projectTabsContainer.innerHTML = "";
@@ -1850,6 +2072,67 @@ function renderProjects() {
 	sidebarHeader.appendChild(appName);
 	sidebarHeader.appendChild(sidebarCloseBtn);
 	sidebar.appendChild(sidebarHeader);
+
+	// User info + sign-out
+	supabase.auth.getUser().then(({ data: { user } }) => {
+		if (!user) return;
+		const userRow = document.createElement("div");
+		userRow.classList.add("sidebar-user-row");
+
+		const avatar = document.createElement("div");
+		avatar.classList.add("sidebar-user-avatar");
+		if (user.user_metadata?.avatar_url) {
+			const img = document.createElement("img");
+			img.src = user.user_metadata.avatar_url;
+			img.alt = "";
+			img.classList.add("sidebar-user-avatar-img");
+			avatar.appendChild(img);
+		} else {
+			avatar.textContent = (user.email?.[0] || "?").toUpperCase();
+		}
+
+		const email = document.createElement("span");
+		email.classList.add("sidebar-user-email");
+		email.textContent = user.user_metadata?.name || user.email || "";
+		email.title = user.email || "";
+
+		const signOutBtn = document.createElement("button");
+		signOutBtn.classList.add("sidebar-signout-btn");
+		signOutBtn.title = "Sign out";
+		signOutBtn.addEventListener("click", () => signOut());
+
+		userRow.appendChild(avatar);
+		userRow.appendChild(email);
+		userRow.appendChild(signOutBtn);
+		sidebar.insertBefore(userRow, sidebar.firstChild.nextSibling);
+	});
+
+	// Overview item
+	const overviewItem = document.createElement("div");
+	overviewItem.classList.add("overview-sidebar-item");
+	if (currentView === "overview") overviewItem.classList.add("active");
+
+	const overviewIcon = document.createElement("span");
+	overviewIcon.classList.add("overview-sidebar-icon");
+	overviewIcon.textContent = "◉";
+
+	const overviewLabel = document.createElement("span");
+	overviewLabel.textContent = "Overview";
+
+	overviewItem.appendChild(overviewIcon);
+	overviewItem.appendChild(overviewLabel);
+
+	overviewItem.addEventListener("click", () => {
+		currentView = "overview";
+		currentProjectTab = "board";
+		selectedTodos.clear();
+		sidebar.classList.remove("open");
+		sidebarBackdrop.classList.remove("visible");
+		renderProjects();
+		renderOverview();
+	});
+
+	sidebar.appendChild(overviewItem);
 
 	// Inbox item
 	const inboxItem = document.createElement("div");
@@ -1995,8 +2278,30 @@ function renderProjects() {
 		const name = document.createElement("span");
 		name.textContent = project.title;
 		name.classList.add("project-name");
+		name.title = "Double-click to rename";
 
-		name.addEventListener("click", () => {
+		name.addEventListener("click", (e) => {
+			if (e.detail >= 2) {
+				const input = document.createElement("input");
+				input.classList.add("project-name-input");
+				input.value = project.title;
+				name.replaceWith(input);
+				input.focus();
+				input.select();
+				function saveRename() {
+					const newTitle = input.value.trim() || project.title;
+					project.title = newTitle;
+					saveProjects();
+					renderProjects();
+					if (currentProjectId === project.id) projectTitle.textContent = newTitle;
+				}
+				input.addEventListener("blur", saveRename);
+				input.addEventListener("keydown", ev => {
+					if (ev.key === "Enter") input.blur();
+					if (ev.key === "Escape") renderProjects();
+				});
+				return;
+			}
 			currentProjectId = project.id;
 			currentView = "project";
 			currentProjectTab = "board";
@@ -2085,6 +2390,34 @@ document.addEventListener("click", (e) => {
 		document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.remove("selected"));
 		renderSelectionBar();
 	}
+});
+
+projectTitle.addEventListener("dblclick", () => {
+	if (currentView !== "project") return;
+	const project = getCurrentProject();
+	if (!project) return;
+
+	const input = document.createElement("input");
+	input.value = project.title;
+	input.classList.add("project-title-edit");
+	projectTitle.textContent = "";
+	projectTitle.appendChild(input);
+	input.focus();
+	input.select();
+
+	function saveTitle() {
+		const newTitle = input.value.trim() || project.title;
+		project.title = newTitle;
+		saveProjects();
+		renderProjects();
+		renderTodos();
+	}
+
+	input.addEventListener("blur", saveTitle);
+	input.addEventListener("keydown", (ev) => {
+		if (ev.key === "Enter") input.blur();
+		if (ev.key === "Escape") renderTodos();
+	});
 });
 
 window.addEventListener("resize", () => {
