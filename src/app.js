@@ -33,16 +33,12 @@ window.projects = projects;
 let sortBy = "default"; // default | priority | createdAt | updatedAt | dueDate
 let sortDir = "asc"; // asc | desc
 
-let undoState = null; // { todo, project, index }
 let undoTimer = null;
 let undoToastEl = null;
 
-function showUndoToast(todo, project, index) {
-	// Clear any existing toast
+function showUndoToast(titleText, onUndo) {
 	if (undoTimer) clearTimeout(undoTimer);
 	if (undoToastEl) undoToastEl.remove();
-
-	undoState = { todo, project, index };
 
 	const toast = document.createElement("div");
 	toast.classList.add("undo-toast");
@@ -54,7 +50,7 @@ function showUndoToast(todo, project, index) {
 
 	const title = document.createElement("h2");
 	title.classList.add("undo-toast-title");
-	title.textContent = "Card deleted";
+	title.textContent = titleText;
 
 	const undoBtn = document.createElement("button");
 	undoBtn.classList.add("undo-toast-btn");
@@ -65,16 +61,12 @@ function showUndoToast(todo, project, index) {
 		toast.classList.remove("visible");
 		toast.addEventListener("transitionend", () => toast.remove(), { once: true });
 		undoToastEl = null;
-		undoState = null;
 	}
 
 	closeBtn.addEventListener("click", dismiss);
 
 	undoBtn.addEventListener("click", () => {
-		if (!undoState) return;
-		undoState.project.todos.splice(undoState.index, 0, undoState.todo);
-		saveProjects();
-		renderTodos();
+		onUndo();
 		dismiss();
 	});
 
@@ -83,7 +75,6 @@ function showUndoToast(todo, project, index) {
 	toast.appendChild(undoBtn);
 	document.body.appendChild(toast);
 
-	// Trigger enter animation
 	requestAnimationFrame(() => {
 		requestAnimationFrame(() => toast.classList.add("visible"));
 	});
@@ -242,13 +233,21 @@ function addProject(title) {
 function deleteProject(id) {
 	if (projects.length === 1) return;
 	const index = projects.findIndex(p => p.id === id);
-	projects.splice(index, 1);
+	const [removed] = projects.splice(index, 1);
+	const prevCurrentId = currentProjectId;
 	if (currentProjectId === id) {
 		currentProjectId = projects[0].id;
 	}
 	saveProjects();
 	renderProjects();
 	renderTodos();
+	showUndoToast("Project deleted", () => {
+		projects.splice(index, 0, removed);
+		currentProjectId = prevCurrentId;
+		saveProjects();
+		renderProjects();
+		renderTodos();
+	});
 }
 
 /* ======================
@@ -741,7 +740,11 @@ function renderTodos() {
 			proj.removeTodo(todo.id);
 			saveProjects();
 			renderTodos();
-			showUndoToast(todo, proj, index);
+			showUndoToast("Card deleted", () => {
+				proj.todos.splice(index, 0, todo);
+				saveProjects();
+				renderTodos();
+			});
 		});
 
 		// MOVE TO PROJECT
