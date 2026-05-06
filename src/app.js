@@ -41,6 +41,7 @@ let sortDir = "asc"; // asc | desc
 
 let selectedTodos = new Set(); // set of todo IDs currently selected
 let dragState = null; // { todoIds, source: "project"|"inbox", projectId }
+let touchDrag = null;
 
 let undoTimer = null;
 let undoToastEl = null;
@@ -419,6 +420,7 @@ function buildTodoCard(todo, ctx) {
 	todoCard.classList.add("todo-card");
 	todoCard.dataset.priority = (todo.priority || "").toLowerCase();
 	todoCard.dataset.status = (todo.status || "").toLowerCase().replace(/ /g, "-");
+	if (selectedTodos.has(todo.id)) todoCard.classList.add("selected");
 
 	const todoTitle       = document.createElement("h1"); todoTitle.classList.add("todo-title");
 	const todoDescription = document.createElement("p");  todoDescription.classList.add("todo-description");
@@ -613,6 +615,8 @@ function buildTodoCard(todo, ctx) {
 	todoCard.appendChild(todoChecklist);
 	todoCard.appendChild(todoLink);
 
+	addCardTouchDrag(todoCard, todo, ctx);
+
 	return todoCard;
 }
 
@@ -778,27 +782,97 @@ function buildProjectTabBar() {
 }
 
 function renderResourcesPanel(project) {
-	if (!project.resources) project.resources = { notes: "" };
+	if (!project.resources) project.resources = { notes: "", html: "" };
 
 	const panel = document.createElement("div");
 	panel.classList.add("resources-panel");
 
-	const notesLabel = document.createElement("label");
-	notesLabel.classList.add("resources-label");
-	notesLabel.textContent = "Notes";
+	const wrap = document.createElement("div");
+	wrap.classList.add("resources-editor-wrap");
 
-	const notesArea = document.createElement("textarea");
-	notesArea.classList.add("resources-notes");
-	notesArea.placeholder = "Add notes for this project…";
-	notesArea.value = project.resources.notes || "";
+	// Header row: label + format toggle
+	const header = document.createElement("div");
+	header.classList.add("resources-editor-header");
 
-	notesArea.addEventListener("input", () => {
-		project.resources.notes = notesArea.value;
+	const lbl = document.createElement("span");
+	lbl.classList.add("resources-label");
+	lbl.textContent = "Notes";
+
+	const formatToggle = document.createElement("button");
+	formatToggle.classList.add("resources-format-toggle");
+	formatToggle.title = "Formatting options";
+	formatToggle.innerHTML = "<strong>A</strong>";
+
+	header.appendChild(lbl);
+	header.appendChild(formatToggle);
+
+	// Toolbar (hidden by default)
+	const toolbar = document.createElement("div");
+	toolbar.classList.add("resources-toolbar");
+	toolbar.style.display = "none";
+
+	const fmtDefs = [
+		{ cmd: "bold",                label: "<strong>B</strong>", title: "Bold" },
+		{ cmd: "italic",              label: "<em>I</em>",          title: "Italic" },
+		{ cmd: "bulletList",          label: "• List",              title: "Bullet list" },
+		{ cmd: "heading",             label: "H",                   title: "Heading" },
+		{ cmd: "blockquote",          label: "❝",                  title: "Blockquote" },
+		{ cmd: "link",                label: "🔗",                 title: "Insert link" },
+	];
+
+	const content = document.createElement("div");
+	content.classList.add("resources-content");
+	content.contentEditable = "true";
+	content.dataset.placeholder = "Add notes for this project…";
+
+	// Load content
+	if (project.resources.html) {
+		content.innerHTML = project.resources.html;
+	} else if (project.resources.notes) {
+		content.textContent = project.resources.notes;
+		project.resources.html = content.innerHTML;
+	}
+
+	function save() {
+		project.resources.html = content.innerHTML;
 		saveProjects();
+	}
+
+	fmtDefs.forEach(({ cmd, label, title }) => {
+		const btn = document.createElement("button");
+		btn.classList.add("res-fmt-btn");
+		btn.innerHTML = label;
+		btn.title = title;
+		btn.addEventListener("mousedown", (e) => e.preventDefault());
+		btn.addEventListener("click", () => {
+			content.focus();
+			if (cmd === "bold") document.execCommand("bold");
+			else if (cmd === "italic") document.execCommand("italic");
+			else if (cmd === "bulletList") document.execCommand("insertUnorderedList");
+			else if (cmd === "heading") document.execCommand("formatBlock", false, "h3");
+			else if (cmd === "blockquote") document.execCommand("formatBlock", false, "blockquote");
+			else if (cmd === "link") {
+				const url = prompt("Enter URL:", "https://");
+				if (url) document.execCommand("createLink", false, url);
+			}
+			save();
+		});
+		toolbar.appendChild(btn);
 	});
 
-	panel.appendChild(notesLabel);
-	panel.appendChild(notesArea);
+	formatToggle.addEventListener("click", () => {
+		const open = toolbar.style.display !== "none";
+		toolbar.style.display = open ? "none" : "flex";
+		formatToggle.classList.toggle("active", !open);
+	});
+
+	content.addEventListener("input", save);
+	content.addEventListener("click", (e) => { if (e.target.tagName === "A") e.preventDefault(); });
+
+	wrap.appendChild(header);
+	wrap.appendChild(toolbar);
+	wrap.appendChild(content);
+	panel.appendChild(wrap);
 	todoContainer.appendChild(panel);
 }
 
@@ -866,30 +940,45 @@ function sortedArray(arr) {
 ====================== */
 
 function renderSelectionBar() {
-	if (!selectionBarContainer) return;
-	selectionBarContainer.innerHTML = "";
-	if (selectedTodos.size === 0) return;
+	if (selectedTodos.size === 0) {
+		// Animate out and remove
+		if (selectionOverlay) {
+			selectionOverlay.classList.remove("visible");
+			selectionOverlay.addEventListener("transitionend", () => {
+				if (selectionOverlay) { selectionOverlay.remove(); selectionOverlay = null; }
+			}, { once: true });
+		}
+		return;
+	}
 
-	const bar = document.createElement("div");
-	bar.classList.add("selection-bar");
+	const isNew = !selectionOverlay;
+
+	if (!selectionOverlay) {
+		selectionOverlay = document.createElement("div");
+		selectionOverlay.classList.add("selection-bar-overlay");
+		document.body.appendChild(selectionOverlay);
+		// Animate in on next frame
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => selectionOverlay && selectionOverlay.classList.add("visible"));
+		});
+	}
+
+	// Clear and rebuild contents
+	selectionOverlay.innerHTML = "";
 
 	const count = document.createElement("span");
 	count.classList.add("selection-count");
 	count.textContent = `${selectedTodos.size} selected`;
+	count.addEventListener("click", (e) => e.stopPropagation());
 
-	const clearBtn = document.createElement("button");
-	clearBtn.classList.add("selection-btn");
-	clearBtn.textContent = "✕ Clear";
-	clearBtn.addEventListener("click", () => {
-		selectedTodos.clear();
-		document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.remove("selected"));
-		renderSelectionBar();
-	});
+	const divider = document.createElement("span");
+	divider.classList.add("selection-bar-divider");
 
 	const deleteAllBtn = document.createElement("button");
 	deleteAllBtn.classList.add("selection-btn", "selection-btn-danger");
 	deleteAllBtn.textContent = `Delete ${selectedTodos.size}`;
-	deleteAllBtn.addEventListener("click", () => {
+	deleteAllBtn.addEventListener("click", (e) => {
+		e.stopPropagation();
 		const ids = [...selectedTodos];
 		if (currentView === "inbox") {
 			const removed = ids.map(id => {
@@ -928,7 +1017,7 @@ function renderSelectionBar() {
 	moveSelect.classList.add("selection-select");
 	const moveDefault = document.createElement("option");
 	moveDefault.value = "";
-	moveDefault.textContent = "Move to…";
+	moveDefault.textContent = "Move to▼";
 	moveSelect.appendChild(moveDefault);
 	projects.forEach(p => {
 		if (currentView === "project" && p.id === currentProjectId) return;
@@ -937,7 +1026,9 @@ function renderSelectionBar() {
 		opt.textContent = p.title;
 		moveSelect.appendChild(opt);
 	});
-	moveSelect.addEventListener("change", () => {
+	moveSelect.addEventListener("click", (e) => e.stopPropagation());
+	moveSelect.addEventListener("change", (e) => {
+		e.stopPropagation();
 		if (!moveSelect.value) return;
 		const target = projects.find(p => p.id === moveSelect.value);
 		const ids = [...selectedTodos];
@@ -971,14 +1062,16 @@ function renderSelectionBar() {
 	prioritySelect.classList.add("selection-select");
 	const priDefault = document.createElement("option");
 	priDefault.value = "";
-	priDefault.textContent = "Priority…";
+	priDefault.textContent = "Priority▼";
 	prioritySelect.appendChild(priDefault);
 	["Low", "Medium", "High"].forEach(p => {
 		const opt = document.createElement("option");
 		opt.value = p; opt.textContent = p;
 		prioritySelect.appendChild(opt);
 	});
-	prioritySelect.addEventListener("change", () => {
+	prioritySelect.addEventListener("click", (e) => e.stopPropagation());
+	prioritySelect.addEventListener("change", (e) => {
+		e.stopPropagation();
 		if (!prioritySelect.value) return;
 		batchUpdate("priority", prioritySelect.value);
 	});
@@ -988,25 +1081,38 @@ function renderSelectionBar() {
 	statusSelect.classList.add("selection-select");
 	const statDefault = document.createElement("option");
 	statDefault.value = "";
-	statDefault.textContent = "Status…";
+	statDefault.textContent = "Status▼";
 	statusSelect.appendChild(statDefault);
 	getColumnLabels().forEach(l => {
 		const opt = document.createElement("option");
 		opt.value = l; opt.textContent = l;
 		statusSelect.appendChild(opt);
 	});
-	statusSelect.addEventListener("change", () => {
+	statusSelect.addEventListener("click", (e) => e.stopPropagation());
+	statusSelect.addEventListener("change", (e) => {
+		e.stopPropagation();
 		if (!statusSelect.value) return;
 		batchUpdate("status", statusSelect.value);
 	});
 
-	bar.appendChild(count);
-	bar.appendChild(clearBtn);
-	bar.appendChild(deleteAllBtn);
-	bar.appendChild(moveSelect);
-	bar.appendChild(prioritySelect);
-	bar.appendChild(statusSelect);
-	selectionBarContainer.appendChild(bar);
+	const closeBtn = document.createElement("button");
+	closeBtn.classList.add("selection-close-btn");
+	closeBtn.title = "Clear selection";
+	closeBtn.textContent = "✕";
+	closeBtn.addEventListener("click", (e) => {
+		e.stopPropagation();
+		selectedTodos.clear();
+		document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.remove("selected"));
+		renderSelectionBar();
+	});
+
+	selectionOverlay.appendChild(count);
+	selectionOverlay.appendChild(divider);
+	selectionOverlay.appendChild(deleteAllBtn);
+	selectionOverlay.appendChild(moveSelect);
+	selectionOverlay.appendChild(prioritySelect);
+	selectionOverlay.appendChild(statusSelect);
+	selectionOverlay.appendChild(closeBtn);
 }
 
 function batchUpdate(field, value) {
@@ -1467,6 +1573,123 @@ function renderFlatKanban(project) {
 }
 
 /* ======================
+   TOUCH DRAG
+====================== */
+
+function addCardTouchDrag(todoCard, todo, ctx) {
+	let pressTimer = null;
+	let startTouch = null;
+	let isDragging = false;
+
+	todoCard.addEventListener("touchstart", (e) => {
+		if (e.touches.length > 1) return;
+		startTouch = e.touches[0];
+		isDragging = false;
+		pressTimer = setTimeout(() => {
+			pressTimer = null;
+			isDragging = true;
+			if (!selectedTodos.has(todo.id)) {
+				selectedTodos.clear();
+				document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.remove("selected"));
+				selectedTodos.add(todo.id);
+				todoCard.classList.add("selected");
+				renderSelectionBar();
+			}
+			dragState = {
+				todoIds: [...selectedTodos],
+				source: ctx.isInbox ? "inbox" : "project",
+				projectId: ctx.isInbox ? null : currentProjectId,
+			};
+			const rect = todoCard.getBoundingClientRect();
+			const ghost = todoCard.cloneNode(true);
+			ghost.classList.add("touch-drag-ghost");
+			ghost.style.width = rect.width + "px";
+			ghost.style.left = rect.left + "px";
+			ghost.style.top = rect.top + "px";
+			document.body.appendChild(ghost);
+			touchDrag = { ghost, offsetX: startTouch.clientX - rect.left, offsetY: startTouch.clientY - rect.top };
+			todoCard.style.opacity = "0.35";
+		}, 400);
+	}, { passive: true });
+
+	todoCard.addEventListener("touchmove", (e) => {
+		if (pressTimer) {
+			const t = e.touches[0];
+			if (Math.abs(t.clientX - startTouch.clientX) > 8 || Math.abs(t.clientY - startTouch.clientY) > 8) {
+				clearTimeout(pressTimer); pressTimer = null;
+			}
+		}
+		if (!isDragging || !touchDrag) return;
+		e.preventDefault();
+		const t = e.touches[0];
+		touchDrag.ghost.style.left = (t.clientX - touchDrag.offsetX) + "px";
+		touchDrag.ghost.style.top = (t.clientY - touchDrag.offsetY) + "px";
+		// highlight drop targets
+		document.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+		touchDrag.ghost.style.pointerEvents = "none";
+		const el = document.elementFromPoint(t.clientX, t.clientY);
+		touchDrag.ghost.style.pointerEvents = "";
+		if (el) {
+			const ca = el.closest(".kanban-cards"); const pi = el.closest(".project-item[data-project-id]"); const ii = el.closest(".inbox-sidebar-item"); const ic = el.closest(".inbox-col");
+			if (ca) ca.classList.add("drag-over");
+			else if (pi) pi.classList.add("drag-over");
+			else if (ii) ii.classList.add("drag-over");
+			else if (ic) ic.classList.add("drag-over");
+		}
+	}, { passive: false });
+
+	const endDrag = (e) => {
+		if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+		if (!isDragging || !touchDrag) { isDragging = false; return; }
+		isDragging = false;
+		const t = (e.changedTouches || e.touches)[0];
+		touchDrag.ghost.style.pointerEvents = "none";
+		const el = t ? document.elementFromPoint(t.clientX, t.clientY) : null;
+		touchDrag.ghost.remove(); touchDrag = null;
+		todoCard.style.opacity = "";
+		document.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+		if (!el || !dragState?.todoIds) { dragState = null; return; }
+
+		const ca = el.closest(".kanban-cards"); const pi = el.closest(".project-item[data-project-id]"); const ii = el.closest(".inbox-sidebar-item"); const ic = el.closest(".inbox-col");
+		if (ca) {
+			const col = columns.find(c => c.id === ca.closest(".kanban-column")?.dataset.colId);
+			if (col) {
+				dragState.todoIds.forEach(id => {
+					let t2;
+					if (dragState.source === "inbox") { t2 = inbox.find(x => x.id === id); if (t2) inbox.splice(inbox.indexOf(t2), 1); }
+					else { const src = projects.find(p => p.id === dragState.projectId); t2 = src?.todos.find(x => x.id === id); if (t2) src.removeTodo(id); }
+					if (t2) { t2.status = col.label; getCurrentProject().addTodo(t2); }
+				});
+				selectedTodos.clear(); dragState = null; saveInbox(); saveProjects(); renderProjects(); renderTodos(); return;
+			}
+		}
+		if (pi) {
+			const tp = projects.find(p => p.id === pi.dataset.projectId);
+			if (tp) {
+				dragState.todoIds.forEach(id => {
+					let t2;
+					if (dragState.source === "inbox") { t2 = inbox.find(x => x.id === id); if (t2) inbox.splice(inbox.indexOf(t2), 1); }
+					else { if (dragState.projectId === tp.id) return; const src = projects.find(p => p.id === dragState.projectId); t2 = src?.todos.find(x => x.id === id); if (t2) src.removeTodo(id); }
+					if (t2) { const v = getColumnLabels(); if (!v.includes(t2.status)) t2.status = v.find(l => l.toLowerCase().includes("progress")) || v[0]; t2.epicId = null; tp.addTodo(t2); }
+				});
+				selectedTodos.clear(); dragState = null; saveInbox(); saveProjects(); renderProjects(); renderTodos(); return;
+			}
+		}
+		if (ii || ic) {
+			if (dragState.source !== "inbox") {
+				dragState.todoIds.forEach(id => { const src = projects.find(p => p.id === dragState.projectId); const t2 = src?.todos.find(x => x.id === id); if (t2) { src.removeTodo(id); inbox.push(t2); } });
+				selectedTodos.clear(); dragState = null; saveInbox(); saveProjects(); renderProjects();
+				if (currentView === "inbox") renderInbox(); else renderTodos(); return;
+			}
+		}
+		dragState = null;
+	};
+
+	todoCard.addEventListener("touchend", endDrag);
+	todoCard.addEventListener("touchcancel", endDrag);
+}
+
+/* ======================
    RENDER
 ====================== */
 
@@ -1572,6 +1795,20 @@ function renderTodos() {
 
 	sortBarContainer.innerHTML = "";
 	sortBarContainer.appendChild(buildSortBar(project.todos, renderTodos));
+
+	if (project.epics.length === 0) {
+		const epicBtn = document.createElement("button");
+		epicBtn.classList.add("sort-btn", "add-epic-sort-btn");
+		epicBtn.textContent = "+ Add Epic";
+		epicBtn.style.marginLeft = "auto";
+		epicBtn.addEventListener("click", () => {
+			const newEpic = { id: self.crypto.randomUUID(), title: "New Epic", collapsed: false };
+			project.epics.push(newEpic);
+			saveProjects();
+			renderTodos();
+		});
+		sortBarContainer.querySelector(".sort-bar").appendChild(epicBtn);
+	}
 
 	if (project.epics.length > 0) {
 		renderSwimlaneTodos(project);
@@ -1843,7 +2080,7 @@ addTodoBtn.addEventListener("click", () => {
 document.querySelector("#fab-btn").addEventListener("click", () => showInboxAddForm());
 
 document.addEventListener("click", (e) => {
-	if (!e.target.closest(".todo-card")) {
+	if (!e.target.closest(".todo-card") && !e.target.closest(".selection-bar-overlay")) {
 		selectedTodos.clear();
 		document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.remove("selected"));
 		renderSelectionBar();

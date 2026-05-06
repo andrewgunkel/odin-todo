@@ -1968,30 +1968,54 @@ textarea.modal-form-input {
 }
 
 /* ======================
-   SELECTION BAR
+   SELECTION BAR OVERLAY
 ====================== */
 
-#selection-bar-container { flex-shrink: 0; }
-
-.selection-bar {
+.selection-bar-overlay {
+    position: fixed;
+    bottom: 96px;
+    left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 150;
+    background: var(--md-card-surface);
+    border-radius: 999px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 1px 6px rgba(0,0,0,0.08);
+    border: 1px solid var(--md-field-border);
+    padding: 6px 12px;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 16px 4px;
-    flex-wrap: wrap;
+    white-space: nowrap;
+    max-width: 90vw;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.2s;
+}
+
+.selection-bar-overlay.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.selection-bar-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--md-field-border);
+    flex-shrink: 0;
 }
 
 .selection-count {
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: var(--palette-dark);
-    margin-right: 4px;
+    padding: 0 4px;
 }
 
 .selection-btn {
     font-size: 0.75rem;
     font-family: inherit;
-    padding: 3px 10px;
+    padding: 4px 10px;
     border-radius: 999px;
     border: 1px solid var(--md-field-border);
     background: transparent;
@@ -1999,51 +2023,78 @@ textarea.modal-form-input {
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
     white-space: nowrap;
+    touch-action: manipulation;
 }
 
-.selection-btn:hover {
-    background: rgba(4, 67, 137, 0.06);
-    border-color: var(--palette-dark);
-    color: var(--palette-dark);
-}
+.selection-btn:hover { background: rgba(4, 67, 137, 0.07); border-color: var(--palette-dark); color: var(--palette-dark); }
 
-.selection-btn-danger { color: #d32f2f; border-color: #d32f2f; }
-.selection-btn-danger:hover { background: #ffebee; }
+.selection-btn-danger { color: #d32f2f; border-color: rgba(211,47,47,0.4); }
+.selection-btn-danger:hover { background: #ffebee; border-color: #d32f2f; }
 
 .selection-select {
     font-size: 0.75rem;
     font-family: inherit;
-    padding: 3px 22px 3px 8px;
+    padding: 4px 22px 4px 10px;
     border-radius: 999px;
     border: 1px solid var(--md-field-border);
     background: var(--md-card-surface);
     color: var(--md-input-color);
     cursor: pointer;
-    transition: border-color 0.15s;
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23444746' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 6px center;
+    background-position: right 7px center;
+    touch-action: manipulation;
 }
 
 .selection-select:focus { outline: none; border-color: var(--palette-dark); }
 
-[data-theme="dark"] .selection-count { color: #c4baff; }
-
-[data-theme="dark"] .selection-btn { border-color: #3d3b52; color: #e0deff; }
-[data-theme="dark"] .selection-btn:hover {
-    background: rgba(157, 143, 255, 0.1);
-    border-color: #9d8fff;
-    color: #9d8fff;
+.selection-close-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #9e9e9e;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+    touch-action: manipulation;
 }
-[data-theme="dark"] .selection-btn-danger { color: #ff6b6b; border-color: #ff6b6b; }
-[data-theme="dark"] .selection-btn-danger:hover { background: rgba(255, 107, 107, 0.1); }
 
-[data-theme="dark"] .selection-select {
+.selection-close-btn:hover { background: #ffebee; color: #d32f2f; }
+
+@media (max-width: 640px) {
+    .selection-bar-overlay {
+        left: 12px;
+        right: 12px;
+        bottom: 84px;
+        border-radius: 16px;
+        padding: 10px 14px;
+        transform: translateY(80px);
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: none;
+    }
+    .selection-bar-overlay.visible { transform: translateY(0); }
+    .selection-count { flex: 1; }
+}
+
+[data-theme="dark"] .selection-bar-overlay {
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
     border-color: #3d3b52;
-    background-color: #1c1b26;
-    color: #e0deff;
 }
+[data-theme="dark"] .selection-count { color: #c4baff; }
+[data-theme="dark"] .selection-btn { border-color: #3d3b52; color: #e0deff; }
+[data-theme="dark"] .selection-btn:hover { background: rgba(157,143,255,0.12); border-color: #9d8fff; color: #c4baff; }
+[data-theme="dark"] .selection-btn-danger { color: #ff6b6b; border-color: rgba(255,107,107,0.4); }
+[data-theme="dark"] .selection-btn-danger:hover { background: rgba(255,107,107,0.12); border-color: #ff6b6b; }
+[data-theme="dark"] .selection-select { background-color: #1c1b26; border-color: #3d3b52; color: #e0deff; }
+[data-theme="dark"] .selection-close-btn:hover { background: rgba(255,107,107,0.15); color: #ff6b6b; }
 
 /* ======================
    RESOURCES PANEL
@@ -2065,33 +2116,6 @@ textarea.modal-form-input {
     color: var(--md-label-color);
 }
 
-.resources-notes {
-    width: 100%;
-    max-width: 720px;
-    min-height: 200px;
-    padding: 14px;
-    border: 1px solid var(--md-field-border);
-    border-radius: var(--md-card-radius);
-    background: var(--md-card-surface);
-    color: var(--md-input-color);
-    font-family: inherit;
-    font-size: 0.9rem;
-    line-height: 1.6;
-    resize: vertical;
-    transition: border-color 0.15s;
-    box-shadow: var(--md-card-shadow);
-}
-
-.resources-notes:focus {
-    outline: none;
-    border-color: var(--palette-dark);
-    box-shadow: 0 0 0 1px var(--palette-dark), 0 0 0 4px rgba(4, 67, 137, 0.1);
-}
-
-[data-theme="dark"] .resources-notes:focus {
-    border-color: #6c63ff;
-    box-shadow: 0 0 0 1px #6c63ff, 0 0 0 4px rgba(108, 99, 255, 0.15);
-}
 
 /* ======================
    SWIMLANES
@@ -2268,3 +2292,157 @@ textarea.modal-form-input {
     color: #9d8fff;
     background: rgba(157, 143, 255, 0.06);
 }
+
+/* ======================
+   TOUCH DRAG GHOST
+====================== */
+
+.touch-drag-ghost {
+    position: fixed;
+    z-index: 400;
+    pointer-events: none;
+    opacity: 0.88;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+    transform: scale(1.03);
+    border-radius: var(--md-card-radius);
+    transition: none !important;
+}
+
+/* ======================
+   RESOURCES RICH TEXT EDITOR
+====================== */
+
+.resources-editor-wrap {
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--md-field-border);
+    border-radius: var(--md-card-radius);
+    box-shadow: var(--md-card-shadow);
+    background: var(--md-card-surface);
+    overflow: hidden;
+}
+
+.resources-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--md-field-border);
+}
+
+.resources-format-toggle {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--md-field-border);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--md-label-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.resources-format-toggle:hover,
+.resources-format-toggle.active {
+    background: rgba(4, 67, 137, 0.08);
+    color: var(--palette-dark);
+    border-color: var(--palette-dark);
+}
+
+.resources-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--md-field-border);
+    background: rgba(0,0,0,0.015);
+    flex-wrap: wrap;
+}
+
+.res-fmt-btn {
+    min-width: 32px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--md-input-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+    touch-action: manipulation;
+}
+
+.res-fmt-btn:hover {
+    background: rgba(4, 67, 137, 0.07);
+    border-color: var(--md-field-border);
+    color: var(--palette-dark);
+}
+
+.resources-content {
+    min-height: 220px;
+    padding: 14px 16px;
+    outline: none;
+    color: var(--md-input-color);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.7;
+    overflow-y: auto;
+    resize: vertical;
+}
+
+.resources-content:empty::before {
+    content: attr(data-placeholder);
+    color: #c4c7c5;
+    pointer-events: none;
+    display: block;
+}
+
+.resources-content h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 8px 0 4px;
+    color: var(--palette-dark);
+}
+
+.resources-content ul {
+    padding-left: 22px;
+    margin: 4px 0;
+}
+
+.resources-content li { margin: 2px 0; }
+
+.resources-content blockquote {
+    border-left: 3px solid var(--palette-dark);
+    margin: 8px 0;
+    padding: 4px 0 4px 14px;
+    color: var(--md-label-color);
+    font-style: italic;
+}
+
+.resources-content a {
+    color: var(--palette-dark);
+    text-decoration: underline;
+}
+
+/* Dark mode */
+[data-theme="dark"] .resources-editor-wrap { border-color: #2d2b3d; }
+[data-theme="dark"] .resources-editor-header { border-bottom-color: #2d2b3d; }
+[data-theme="dark"] .resources-format-toggle { border-color: #3d3b52; color: #9896b0; }
+[data-theme="dark"] .resources-format-toggle:hover,
+[data-theme="dark"] .resources-format-toggle.active { background: rgba(157,143,255,0.12); color: #c4baff; border-color: #6c63ff; }
+[data-theme="dark"] .resources-toolbar { border-bottom-color: #2d2b3d; background: rgba(255,255,255,0.02); }
+[data-theme="dark"] .res-fmt-btn { color: #e0deff; }
+[data-theme="dark"] .res-fmt-btn:hover { background: rgba(157,143,255,0.12); border-color: #3d3b52; color: #c4baff; }
+[data-theme="dark"] .resources-content h3 { color: #c4baff; }
+[data-theme="dark"] .resources-content blockquote { border-left-color: #6c63ff; color: #7a7894; }
+[data-theme="dark"] .resources-content a { color: #9d8fff; }
