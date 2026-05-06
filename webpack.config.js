@@ -21,7 +21,7 @@ export default {
     new HtmlWebpackPlugin({
       template: "./src/template.html",
     }),
-    new Dotenv(),
+    new Dotenv({ systemvars: true }),
   ],
   module: {
     rules: [
