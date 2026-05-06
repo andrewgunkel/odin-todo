@@ -5,7 +5,8 @@
       "Read(//tmp/**)",
       "Read(//private/tmp/**)",
       "Bash(npm run *)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(open /Users/andrewgunkel/repos/odin-todo/dist/index.html)"
     ]
   }
 }
