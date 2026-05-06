@@ -40,6 +40,8 @@ window.projects = projects;
 let sortBy = "default"; // default | priority | createdAt | updatedAt | dueDate
 let sortDir = "asc"; // asc | desc
 
+let currentUser = null;
+
 let selectedTodos = new Set(); // set of todo IDs currently selected
 let dragState = null; // { todoIds, source: "project"|"inbox", projectId }
 let touchDrag = null;
@@ -47,6 +49,10 @@ let touchDrag = null;
 let undoTimer = null;
 let undoToastEl = null;
 let selectionOverlay = null;
+
+let epicFilterIds = new Set(); // empty = show all
+let lastEpicFilterProjectId = null;
+let dragHoverTimer = null;
 
 function showColumnDeleteModal(col) {
 	const others = columns.filter(c => c.id !== col.id);
@@ -148,6 +154,108 @@ function showColumnDeleteModal(col) {
 	document.body.appendChild(overlay);
 }
 
+function showEpicDeleteModal(epicId, project) {
+	const epic = project.epics.find(e => e.id === epicId);
+	if (!epic) return;
+	const otherEpics = project.epics.filter(e => e.id !== epicId);
+	const epicCards = project.todos.filter(t => t.epicId === epicId);
+
+	const overlay = document.createElement("div");
+	overlay.classList.add("modal-overlay");
+
+	const modal = document.createElement("div");
+	modal.classList.add("modal-card");
+
+	const closeBtn = document.createElement("button");
+	closeBtn.classList.add("modal-close-btn");
+	closeBtn.addEventListener("click", () => overlay.remove());
+
+	const title = document.createElement("h2");
+	title.classList.add("modal-title");
+	title.textContent = `You are deleting "${epic.title}"`;
+
+	const body = document.createElement("p");
+	body.classList.add("modal-body");
+	body.textContent = epicCards.length
+		? "What should happen to the cards in this epic?"
+		: "This epic has no cards.";
+
+	// Destination select (only shown if there are cards)
+	const select = document.createElement("select");
+	select.classList.add("modal-select");
+
+	const noEpicOpt = document.createElement("option");
+	noEpicOpt.value = "";
+	noEpicOpt.textContent = "No Epic";
+	select.appendChild(noEpicOpt);
+
+	otherEpics.forEach(e => {
+		const opt = document.createElement("option");
+		opt.value = e.id;
+		opt.textContent = e.title;
+		select.appendChild(opt);
+	});
+
+	// Move + delete
+	const moveBtn = document.createElement("button");
+	moveBtn.classList.add("modal-btn-primary");
+	moveBtn.textContent = epicCards.length ? "Move cards and delete epic" : "Delete epic";
+	moveBtn.addEventListener("click", () => {
+		const targetEpicId = select.value || null;
+		const epicIndex = project.epics.findIndex(e => e.id === epicId);
+		const savedCards = epicCards.map(t => ({ todo: t, prev: t.epicId }));
+
+		epicCards.forEach(t => { t.epicId = targetEpicId; });
+		project.epics = project.epics.filter(e => e.id !== epicId);
+		saveProjects();
+		renderTodos();
+		overlay.remove();
+
+		showUndoToast("Epic deleted", () => {
+			savedCards.forEach(({ todo, prev }) => { todo.epicId = prev; });
+			project.epics.splice(epicIndex, 0, epic);
+			saveProjects();
+			renderTodos();
+		});
+	});
+
+	// Delete all cards + epic
+	const deleteAllBtn = document.createElement("button");
+	deleteAllBtn.classList.add("modal-btn-secondary");
+	deleteAllBtn.textContent = `Delete epic and its ${epicCards.length} card${epicCards.length !== 1 ? "s" : ""}`;
+	deleteAllBtn.addEventListener("click", () => {
+		const epicIndex = project.epics.findIndex(e => e.id === epicId);
+		const removedCards = epicCards.map(t => ({ todo: t, index: project.todos.indexOf(t) }));
+
+		project.todos = project.todos.filter(t => t.epicId !== epicId);
+		project.epics = project.epics.filter(e => e.id !== epicId);
+		saveProjects();
+		renderTodos();
+		overlay.remove();
+
+		showUndoToast("Epic and cards deleted", () => {
+			removedCards.sort((a, b) => a.index - b.index)
+				.forEach(({ todo, index }) => project.todos.splice(index, 0, todo));
+			project.epics.splice(epicIndex, 0, epic);
+			saveProjects();
+			renderTodos();
+		});
+	});
+
+	const btnRow = document.createElement("div");
+	btnRow.classList.add("modal-btn-row");
+	btnRow.appendChild(moveBtn);
+	if (epicCards.length > 0) btnRow.appendChild(deleteAllBtn);
+
+	modal.appendChild(closeBtn);
+	modal.appendChild(title);
+	modal.appendChild(body);
+	if (epicCards.length > 0) modal.appendChild(select);
+	modal.appendChild(btnRow);
+	overlay.appendChild(modal);
+	document.body.appendChild(overlay);
+}
+
 function showUndoToast(titleText, onUndo) {
 	if (undoTimer) clearTimeout(undoTimer);
 	if (undoToastEl) undoToastEl.remove();
@@ -244,6 +352,7 @@ function loadProjects() {
 	parsed.forEach(project => {
 		Object.setPrototypeOf(project, Project.prototype);
 		if (!project.epics) project.epics = [];
+		project.epics.forEach(epic => { if (!epic.extraColumns) epic.extraColumns = []; });
 		if (!project.resources) project.resources = { notes: "" };
 
 		project.todos.forEach(todo => {
@@ -278,8 +387,12 @@ if (projects.length === 0) {
 	saveProjects();
 }
 
-renderProjects();
-renderTodos();
+// getSession reads from localStorage — no network, no flash
+supabase.auth.getSession().then(({ data: { session } }) => {
+	currentUser = session?.user ?? null;
+	renderProjects();
+	renderTodos();
+});
 
 /* ======================
    HELPERS
@@ -375,24 +488,121 @@ function addProject(title) {
 
 function deleteProject(id) {
 	if (projects.length === 1) return;
-	const index = projects.findIndex(p => p.id === id);
-	const [removed] = projects.splice(index, 1);
-	const prevCurrentId = currentProjectId;
-	if (currentProjectId === id) {
-		currentProjectId = projects[0].id;
-		currentProjectTab = "board";
-	}
-	saveProjects();
-	renderProjects();
-	renderTodos();
-	showUndoToast("Project deleted", () => {
-		projects.splice(index, 0, removed);
-		currentProjectId = prevCurrentId;
-		currentProjectTab = "board";
+	showProjectDeleteModal(id);
+}
+
+function showProjectDeleteModal(id) {
+	const project = projects.find(p => p.id === id);
+	if (!project) return;
+	const others = projects.filter(p => p.id !== id);
+
+	const overlay = document.createElement("div");
+	overlay.classList.add("modal-overlay");
+
+	const modal = document.createElement("div");
+	modal.classList.add("modal-card");
+
+	const closeBtn = document.createElement("button");
+	closeBtn.classList.add("modal-close-btn");
+	closeBtn.addEventListener("click", () => overlay.remove());
+
+	const title = document.createElement("h2");
+	title.classList.add("modal-title");
+	title.textContent = `You are deleting "${project.title}"`;
+
+	const body = document.createElement("p");
+	body.classList.add("modal-body");
+	body.textContent = project.todos.length
+		? "What should happen to the cards in this project?"
+		: "This project has no cards.";
+
+	const select = document.createElement("select");
+	select.classList.add("modal-select");
+	others.forEach(p => {
+		const opt = document.createElement("option");
+		opt.value = p.id;
+		opt.textContent = p.title;
+		select.appendChild(opt);
+	});
+
+	// Move cards + delete project
+	const moveBtn = document.createElement("button");
+	moveBtn.classList.add("modal-btn-primary");
+	moveBtn.textContent = project.todos.length ? "Move cards and delete project" : "Delete project";
+	moveBtn.addEventListener("click", () => {
+		const targetId = select.value;
+		const target = projects.find(p => p.id === targetId);
+		const index = projects.findIndex(p => p.id === id);
+		const prevCurrentId = currentProjectId;
+		const movedTodos = [...project.todos];
+
+		if (target) {
+			movedTodos.forEach(t => {
+				t.epicId = null;
+				target.addTodo(t);
+			});
+		}
+		projects.splice(index, 1);
+		if (currentProjectId === id) {
+			currentProjectId = projects[0].id;
+			currentProjectTab = "board";
+		}
 		saveProjects();
 		renderProjects();
 		renderTodos();
+		overlay.remove();
+
+		showUndoToast("Project deleted", () => {
+			if (target) movedTodos.forEach(t => target.removeTodo(t.id));
+			project.todos = movedTodos;
+			projects.splice(index, 0, project);
+			currentProjectId = prevCurrentId;
+			currentProjectTab = "board";
+			saveProjects();
+			renderProjects();
+			renderTodos();
+		});
 	});
+
+	// Delete project and all cards
+	const deleteAllBtn = document.createElement("button");
+	deleteAllBtn.classList.add("modal-btn-secondary");
+	deleteAllBtn.textContent = `Delete project and its ${project.todos.length} card${project.todos.length !== 1 ? "s" : ""}`;
+	deleteAllBtn.addEventListener("click", () => {
+		const index = projects.findIndex(p => p.id === id);
+		const prevCurrentId = currentProjectId;
+		projects.splice(index, 1);
+		if (currentProjectId === id) {
+			currentProjectId = projects[0].id;
+			currentProjectTab = "board";
+		}
+		saveProjects();
+		renderProjects();
+		renderTodos();
+		overlay.remove();
+
+		showUndoToast("Project deleted", () => {
+			projects.splice(index, 0, project);
+			currentProjectId = prevCurrentId;
+			currentProjectTab = "board";
+			saveProjects();
+			renderProjects();
+			renderTodos();
+		});
+	});
+
+	const btnRow = document.createElement("div");
+	btnRow.classList.add("modal-btn-row");
+	btnRow.appendChild(moveBtn);
+	if (project.todos.length > 0) btnRow.appendChild(deleteAllBtn);
+
+	modal.appendChild(closeBtn);
+	modal.appendChild(title);
+	modal.appendChild(body);
+	if (project.todos.length > 0 && others.length > 0) modal.appendChild(select);
+	modal.appendChild(btnRow);
+	overlay.appendChild(modal);
+	document.body.appendChild(overlay);
 }
 
 /* ======================
@@ -631,12 +841,16 @@ function buildTodoCard(todo, ctx) {
 		};
 		e.dataTransfer.effectAllowed = "move";
 		e.dataTransfer.setData("text/plain", "card");
-		requestAnimationFrame(() => todoCard.classList.add("dragging"));
+		// Dim all selected cards so the user sees all of them moving
+		requestAnimationFrame(() => {
+			document.querySelectorAll(".todo-card.selected").forEach(c => c.classList.add("dragging"));
+		});
 	});
 
 	todoCard.addEventListener("dragend", () => {
-		todoCard.classList.remove("dragging");
+		document.querySelectorAll(".todo-card.dragging").forEach(c => c.classList.remove("dragging"));
 		if (dragState) dragState = null;
+		if (dragHoverTimer) { clearTimeout(dragHoverTimer); dragHoverTimer = null; }
 	});
 
 	// ASSEMBLE
@@ -987,6 +1201,16 @@ function sortedArray(arr) {
    SELECTION BAR
 ====================== */
 
+function sizeSelectToContent(el) {
+	const text = el.options[el.selectedIndex]?.text ?? "";
+	const probe = document.createElement("span");
+	probe.style.cssText = "position:fixed;visibility:hidden;white-space:nowrap;font-size:0.75rem;font-family:inherit;padding:0 28px 0 12px;";
+	probe.textContent = text;
+	document.body.appendChild(probe);
+	el.style.width = Math.ceil(probe.getBoundingClientRect().width) + 4 + "px"; // +4 for borders + subpixel
+	probe.remove();
+}
+
 function renderSelectionBar() {
 	if (selectedTodos.size === 0) {
 		// Animate out and remove
@@ -1074,9 +1298,11 @@ function renderSelectionBar() {
 		opt.textContent = p.title;
 		moveSelect.appendChild(opt);
 	});
+	sizeSelectToContent(moveSelect);
 	moveSelect.addEventListener("click", (e) => e.stopPropagation());
 	moveSelect.addEventListener("change", (e) => {
 		e.stopPropagation();
+		sizeSelectToContent(moveSelect);
 		if (!moveSelect.value) return;
 		const target = projects.find(p => p.id === moveSelect.value);
 		const ids = [...selectedTodos];
@@ -1117,9 +1343,11 @@ function renderSelectionBar() {
 		opt.value = p; opt.textContent = p;
 		prioritySelect.appendChild(opt);
 	});
+	sizeSelectToContent(prioritySelect);
 	prioritySelect.addEventListener("click", (e) => e.stopPropagation());
 	prioritySelect.addEventListener("change", (e) => {
 		e.stopPropagation();
+		sizeSelectToContent(prioritySelect);
 		if (!prioritySelect.value) return;
 		batchUpdate("priority", prioritySelect.value);
 	});
@@ -1136,9 +1364,11 @@ function renderSelectionBar() {
 		opt.value = l; opt.textContent = l;
 		statusSelect.appendChild(opt);
 	});
+	sizeSelectToContent(statusSelect);
 	statusSelect.addEventListener("click", (e) => e.stopPropagation());
 	statusSelect.addEventListener("change", (e) => {
 		e.stopPropagation();
+		sizeSelectToContent(statusSelect);
 		if (!statusSelect.value) return;
 		batchUpdate("status", statusSelect.value);
 	});
@@ -1289,6 +1519,9 @@ function renderSwimlaneTodos(project) {
 	todoContainer.classList.add("swimlane-mode");
 
 	const renderSwimlane = (epicId, epicTitle, isNoEpic, collapsed) => {
+		// Apply epic filter (no-epic is always shown)
+		if (!isNoEpic && epicFilterIds.size > 0 && !epicFilterIds.has(epicId)) return;
+
 		const swimlane = document.createElement("div");
 		swimlane.classList.add("swimlane");
 		if (isNoEpic) swimlane.classList.add("swimlane-no-epic");
@@ -1298,28 +1531,25 @@ function renderSwimlaneTodos(project) {
 		const header = document.createElement("div");
 		header.classList.add("swimlane-header");
 
-		if (!isNoEpic) {
-			const collapseBtn = document.createElement("button");
-			collapseBtn.classList.add("swimlane-collapse-btn");
-			collapseBtn.textContent = collapsed ? "▶" : "▼";
-			collapseBtn.addEventListener("click", () => {
+		// Collapse button (both No Epic and regular epics)
+		const collapseBtn = document.createElement("button");
+		collapseBtn.classList.add("swimlane-collapse-btn");
+		collapseBtn.textContent = collapsed ? "▶" : "▼";
+		collapseBtn.addEventListener("click", () => {
+			if (isNoEpic) {
+				project.noEpicCollapsed = !project.noEpicCollapsed;
+			} else {
 				const epic = project.epics.find(e => e.id === epicId);
-				if (epic) {
-					epic.collapsed = !epic.collapsed;
-					saveProjects();
-					collapseBtn.textContent = epic.collapsed ? "▶" : "▼";
-					swimlane.classList.toggle("collapsed", epic.collapsed);
-					const board = swimlane.querySelector(".swimlane-board");
-					if (board) board.style.display = epic.collapsed ? "none" : "";
-				}
-			});
-			header.appendChild(collapseBtn);
-		} else {
-			const spacer = document.createElement("span");
-			spacer.style.width = "18px";
-			spacer.style.flexShrink = "0";
-			header.appendChild(spacer);
-		}
+				if (epic) epic.collapsed = !epic.collapsed;
+			}
+			saveProjects();
+			const isNowCollapsed = isNoEpic ? project.noEpicCollapsed : (project.epics.find(e => e.id === epicId)?.collapsed ?? false);
+			collapseBtn.textContent = isNowCollapsed ? "▶" : "▼";
+			swimlane.classList.toggle("collapsed", isNowCollapsed);
+			const board = swimlane.querySelector(".swimlane-board");
+			if (board) board.style.display = isNowCollapsed ? "none" : "";
+		});
+		header.appendChild(collapseBtn);
 
 		const titleEl = document.createElement("span");
 		titleEl.classList.add("swimlane-title");
@@ -1369,13 +1599,8 @@ function renderSwimlaneTodos(project) {
 			const deleteBtn = document.createElement("button");
 			deleteBtn.classList.add("swimlane-delete-btn");
 			deleteBtn.textContent = "✕";
-			deleteBtn.title = "Delete epic (cards move to No Epic)";
-			deleteBtn.addEventListener("click", () => {
-				project.todos.forEach(t => { if (t.epicId === epicId) t.epicId = null; });
-				project.epics = project.epics.filter(e => e.id !== epicId);
-				saveProjects();
-				renderTodos();
-			});
+			deleteBtn.title = "Delete epic";
+			deleteBtn.addEventListener("click", () => showEpicDeleteModal(epicId, project));
 			header.appendChild(deleteBtn);
 		}
 
@@ -1385,17 +1610,53 @@ function renderSwimlaneTodos(project) {
 		board.classList.add("swimlane-board");
 		if (collapsed) board.style.display = "none";
 
-		columns.forEach(col => {
+		// Project-wide columns + epic-specific extra columns
+		const epic = isNoEpic ? null : project.epics.find(e => e.id === epicId);
+		const epicCols = epic?.extraColumns || [];
+		const allCols = [...columns, ...epicCols];
+
+		allCols.forEach(col => {
 			const { column } = buildKanbanColumn(col, project, isNoEpic ? null : epicId, true);
+			// Epic-specific columns get a delete button in their header
+			if (!isNoEpic && epicCols.includes(col)) {
+				const colHeader = column.querySelector(".kanban-header");
+				const delColBtn = document.createElement("button");
+				delColBtn.classList.add("swimlane-delete-col-btn");
+				delColBtn.textContent = "✕";
+				delColBtn.title = "Remove this column";
+				delColBtn.addEventListener("click", () => {
+					epic.extraColumns = epic.extraColumns.filter(c => c.id !== col.id);
+					saveProjects();
+					renderTodos();
+				});
+				colHeader.appendChild(delColBtn);
+			}
 			board.appendChild(column);
 		});
+
+		if (!isNoEpic) {
+			const addColBtn = document.createElement("button");
+			addColBtn.classList.add("swimlane-add-col-btn");
+			addColBtn.textContent = "+ Column";
+			addColBtn.addEventListener("click", () => {
+				const name = prompt("Column name:");
+				if (!name?.trim()) return;
+				if (!epic.extraColumns) epic.extraColumns = [];
+				const COL_PALETTE = ["#9c27b0","#e91e63","#00bcd4","#ff5722","#3f51b5","#009688"];
+				const color = COL_PALETTE[epic.extraColumns.length % COL_PALETTE.length];
+				epic.extraColumns.push({ id: self.crypto.randomUUID(), label: name.trim(), color, isCompleted: false });
+				saveProjects();
+				renderTodos();
+			});
+			board.appendChild(addColBtn);
+		}
 
 		swimlane.appendChild(board);
 		todoContainer.appendChild(swimlane);
 	};
 
 	// "No Epic" swimlane first
-	renderSwimlane(null, "No Epic", true, false);
+	renderSwimlane(null, "No Epic", true, project.noEpicCollapsed || false);
 
 	// Each defined epic
 	project.epics.forEach(epic => {
@@ -1407,7 +1668,7 @@ function renderSwimlaneTodos(project) {
 	addEpicBtn.classList.add("add-epic-btn");
 	addEpicBtn.textContent = "+ Add Epic";
 	addEpicBtn.addEventListener("click", () => {
-		const newEpic = { id: self.crypto.randomUUID(), title: "New Epic", collapsed: false };
+		const newEpic = { id: self.crypto.randomUUID(), title: "New Epic", collapsed: false, extraColumns: [] };
 		project.epics.push(newEpic);
 		saveProjects();
 		renderTodos();
@@ -1989,6 +2250,41 @@ function renderOverview() {
 	renderSelectionBar();
 }
 
+function buildEpicFilterBar(project) {
+	if (!project.epics.length) return null;
+
+	const bar = document.createElement("div");
+	bar.classList.add("epic-filter-bar");
+
+	const allBtn = document.createElement("button");
+	allBtn.classList.add("epic-filter-pill", "epic-filter-all");
+	allBtn.textContent = "All epics";
+	allBtn.classList.toggle("active", epicFilterIds.size === 0);
+	allBtn.addEventListener("click", () => {
+		epicFilterIds.clear();
+		renderTodos();
+	});
+	bar.appendChild(allBtn);
+
+	project.epics.forEach(epic => {
+		const pill = document.createElement("button");
+		pill.classList.add("epic-filter-pill");
+		pill.textContent = epic.title;
+		pill.classList.toggle("active", epicFilterIds.has(epic.id));
+		pill.addEventListener("click", () => {
+			if (epicFilterIds.has(epic.id)) {
+				epicFilterIds.delete(epic.id);
+			} else {
+				epicFilterIds.add(epic.id);
+			}
+			renderTodos();
+		});
+		bar.appendChild(pill);
+	});
+
+	return bar;
+}
+
 function renderTodos() {
 	if (currentView === "overview") { renderOverview(); return; }
 	if (currentView === "inbox") { renderInbox(); return; }
@@ -1998,6 +2294,12 @@ function renderTodos() {
 
 	if (!project.resources) project.resources = { notes: "" };
 	if (!project.epics) project.epics = [];
+
+	// Reset epic filter when switching projects
+	if (currentProjectId !== lastEpicFilterProjectId) {
+		epicFilterIds.clear();
+		lastEpicFilterProjectId = currentProjectId;
+	}
 
 	addTodoBtn.style.display = "";
 	todoContainer.innerHTML = "";
@@ -2018,13 +2320,18 @@ function renderTodos() {
 	sortBarContainer.innerHTML = "";
 	sortBarContainer.appendChild(buildSortBar(project.todos, renderTodos));
 
+	if (project.epics.length > 0) {
+		const filterBar = buildEpicFilterBar(project);
+		if (filterBar) sortBarContainer.appendChild(filterBar);
+	}
+
 	if (project.epics.length === 0) {
 		const epicBtn = document.createElement("button");
 		epicBtn.classList.add("sort-btn", "add-epic-sort-btn");
 		epicBtn.textContent = "+ Add Epic";
 		epicBtn.style.marginLeft = "auto";
 		epicBtn.addEventListener("click", () => {
-			const newEpic = { id: self.crypto.randomUUID(), title: "New Epic", collapsed: false };
+			const newEpic = { id: self.crypto.randomUUID(), title: "New Epic", collapsed: false, extraColumns: [] };
 			project.epics.push(newEpic);
 			saveProjects();
 			renderTodos();
@@ -2047,6 +2354,16 @@ function renderTodos() {
 
 function renderProjects() {
 	sidebar.innerHTML = "";
+
+	// Two-region layout: scrollable list on top, pinned bottom strip
+	const scrollEl = document.createElement("div");
+	scrollEl.classList.add("sidebar-scroll");
+
+	const bottomEl = document.createElement("div");
+	bottomEl.classList.add("sidebar-bottom");
+
+	sidebar.appendChild(scrollEl);
+	sidebar.appendChild(bottomEl);
 
 	const sidebarHeader = document.createElement("div");
 	sidebarHeader.classList.add("sidebar-header");
@@ -2071,41 +2388,7 @@ function renderProjects() {
 	sidebarHeader.appendChild(icon);
 	sidebarHeader.appendChild(appName);
 	sidebarHeader.appendChild(sidebarCloseBtn);
-	sidebar.appendChild(sidebarHeader);
-
-	// User info + sign-out
-	supabase.auth.getUser().then(({ data: { user } }) => {
-		if (!user) return;
-		const userRow = document.createElement("div");
-		userRow.classList.add("sidebar-user-row");
-
-		const avatar = document.createElement("div");
-		avatar.classList.add("sidebar-user-avatar");
-		if (user.user_metadata?.avatar_url) {
-			const img = document.createElement("img");
-			img.src = user.user_metadata.avatar_url;
-			img.alt = "";
-			img.classList.add("sidebar-user-avatar-img");
-			avatar.appendChild(img);
-		} else {
-			avatar.textContent = (user.email?.[0] || "?").toUpperCase();
-		}
-
-		const email = document.createElement("span");
-		email.classList.add("sidebar-user-email");
-		email.textContent = user.user_metadata?.name || user.email || "";
-		email.title = user.email || "";
-
-		const signOutBtn = document.createElement("button");
-		signOutBtn.classList.add("sidebar-signout-btn");
-		signOutBtn.title = "Sign out";
-		signOutBtn.addEventListener("click", () => signOut());
-
-		userRow.appendChild(avatar);
-		userRow.appendChild(email);
-		userRow.appendChild(signOutBtn);
-		sidebar.insertBefore(userRow, sidebar.firstChild.nextSibling);
-	});
+	scrollEl.appendChild(sidebarHeader);
 
 	// Overview item
 	const overviewItem = document.createElement("div");
@@ -2132,7 +2415,7 @@ function renderProjects() {
 		renderOverview();
 	});
 
-	sidebar.appendChild(overviewItem);
+	scrollEl.appendChild(overviewItem);
 
 	// Inbox item
 	const inboxItem = document.createElement("div");
@@ -2188,12 +2471,12 @@ function renderProjects() {
 		if (currentView === "inbox") renderInbox(); else renderTodos();
 	});
 
-	sidebar.appendChild(inboxItem);
+	scrollEl.appendChild(inboxItem);
 
 	const sectionLabel = document.createElement("div");
 	sectionLabel.classList.add("sidebar-section-label");
 	sectionLabel.textContent = "Projects";
-	sidebar.appendChild(sectionLabel);
+	scrollEl.appendChild(sectionLabel);
 
 	projects.forEach(project => {
 
@@ -2222,9 +2505,22 @@ function renderProjects() {
 			e.preventDefault();
 			if (isProjectDrag) e.dataTransfer.dropEffect = "move";
 			item.classList.add("drag-over");
+			// Hover-to-switch: switch project after holding over it for 700ms
+			if (isCardDrag && project.id !== currentProjectId && !dragHoverTimer) {
+				dragHoverTimer = setTimeout(() => {
+					dragHoverTimer = null;
+					currentProjectId = project.id;
+					currentView = "project";
+					renderTodos();
+					renderProjects();
+				}, 700);
+			}
 		});
 
-		item.addEventListener("dragleave", () => item.classList.remove("drag-over"));
+		item.addEventListener("dragleave", () => {
+			item.classList.remove("drag-over");
+			if (dragHoverTimer) { clearTimeout(dragHoverTimer); dragHoverTimer = null; }
+		});
 
 		// Unified drop: handles both project reorder and card-drop
 		item.addEventListener("drop", (e) => {
@@ -2324,7 +2620,7 @@ function renderProjects() {
 		item.appendChild(name);
 		if (projects.length > 1) item.appendChild(deleteBtn);
 
-		sidebar.appendChild(item);
+		scrollEl.appendChild(item);
 	});
 
 	const addRow = document.createElement("div");
@@ -2341,7 +2637,202 @@ function renderProjects() {
 	});
 
 	addRow.appendChild(addInput);
-	sidebar.appendChild(addRow);
+	bottomEl.appendChild(addRow);
+
+	if (currentUser) {
+		bottomEl.appendChild(buildUserRow(currentUser));
+	}
+}
+
+/* ======================
+   USER ROW + SETTINGS POPUP
+====================== */
+
+const AVATAR_COLORS = [
+	"#FCFF4B", "#1a73e8", "#188038", "#e91e8c",
+	"#f59e0b", "#9c27b0", "#ef4444", "#06b6d4",
+];
+
+function getUserDisplayName(user) {
+	return localStorage.getItem("userDisplayName") ||
+		user.user_metadata?.name ||
+		user.user_metadata?.full_name ||
+		user.email || "User";
+}
+
+function getAvatarColor() {
+	return localStorage.getItem("userAvatarColor") || "#FCFF4B";
+}
+
+function buildUserAvatar(user, sizeClass) {
+	const avatar = document.createElement("div");
+	avatar.classList.add(sizeClass);
+	const color = getAvatarColor();
+	const hasCustomColor = localStorage.getItem("userAvatarColor") !== null;
+
+	if (!hasCustomColor && user.user_metadata?.avatar_url) {
+		// Show Google photo only when no custom colour chosen
+		const img = document.createElement("img");
+		img.src = user.user_metadata.avatar_url;
+		img.alt = "";
+		img.classList.add("sidebar-user-avatar-img");
+		avatar.appendChild(img);
+	} else {
+		avatar.style.background = color;
+		avatar.style.color = color === "#FCFF4B" ? "#044389" : "#fff";
+		avatar.textContent = (getUserDisplayName(user)[0] || "?").toUpperCase();
+	}
+	return avatar;
+}
+
+function buildUserRow(user) {
+	const userRow = document.createElement("div");
+	userRow.classList.add("sidebar-user-row");
+	userRow.title = "Settings";
+
+	const avatar = buildUserAvatar(user, "sidebar-user-avatar");
+
+	const nameEl = document.createElement("span");
+	nameEl.classList.add("sidebar-user-email");
+	nameEl.textContent = getUserDisplayName(user);
+	nameEl.title = user.email || "";
+
+	const chevron = document.createElement("span");
+	chevron.classList.add("sidebar-user-chevron");
+	chevron.textContent = "⌃";
+
+	userRow.appendChild(avatar);
+	userRow.appendChild(nameEl);
+	userRow.appendChild(chevron);
+
+	userRow.addEventListener("click", (e) => {
+		e.stopPropagation();
+		openUserSettings(userRow, user);
+	});
+
+	return userRow;
+}
+
+function openUserSettings(anchorEl, user) {
+	const existing = document.querySelector(".user-settings-popup");
+	if (existing) { existing.remove(); return; }
+
+	const popup = document.createElement("div");
+	popup.classList.add("user-settings-popup");
+
+	// ── User info header ──
+	const popupHeader = document.createElement("div");
+	popupHeader.classList.add("user-settings-header");
+
+	// Use a wrapper so the avatar can be replaced in-place by swatch clicks
+	const avatarWrap = document.createElement("div");
+	avatarWrap.appendChild(buildUserAvatar(user, "user-settings-avatar"));
+
+	const headerInfo = document.createElement("div");
+	headerInfo.classList.add("user-settings-info");
+	const headerName = document.createElement("div");
+	headerName.classList.add("user-settings-name");
+	headerName.textContent = getUserDisplayName(user);
+	const headerEmail = document.createElement("div");
+	headerEmail.classList.add("user-settings-email");
+	headerEmail.textContent = user.email || "";
+	headerInfo.appendChild(headerName);
+	headerInfo.appendChild(headerEmail);
+
+	popupHeader.appendChild(avatarWrap);
+	popupHeader.appendChild(headerInfo);
+	popup.appendChild(popupHeader);
+
+	// ── Divider ──
+	const div1 = document.createElement("div");
+	div1.classList.add("user-settings-divider");
+	popup.appendChild(div1);
+
+	// ── Display name ──
+	const nameSection = document.createElement("div");
+	nameSection.classList.add("user-settings-section");
+	const nameLabel = document.createElement("label");
+	nameLabel.classList.add("user-settings-label");
+	nameLabel.textContent = "Display name";
+	const nameInput = document.createElement("input");
+	nameInput.classList.add("user-settings-input");
+	nameInput.value = getUserDisplayName(user);
+	nameInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") nameInput.blur();
+	});
+	nameInput.addEventListener("blur", () => {
+		const val = nameInput.value.trim();
+		if (val) {
+			localStorage.setItem("userDisplayName", val);
+			renderProjects();
+		}
+	});
+	nameSection.appendChild(nameLabel);
+	nameSection.appendChild(nameInput);
+	popup.appendChild(nameSection);
+
+	// ── Icon colour ──
+	const colorSection = document.createElement("div");
+	colorSection.classList.add("user-settings-section");
+	const colorLabel = document.createElement("label");
+	colorLabel.classList.add("user-settings-label");
+	colorLabel.textContent = "Icon colour";
+	const swatches = document.createElement("div");
+	swatches.classList.add("user-settings-swatches");
+
+	AVATAR_COLORS.forEach(hex => {
+		const swatch = document.createElement("button");
+		swatch.classList.add("user-settings-swatch");
+		swatch.style.background = hex;
+		if (hex === getAvatarColor()) swatch.classList.add("active");
+		swatch.addEventListener("click", (e) => {
+			e.stopPropagation();
+			localStorage.setItem("userAvatarColor", hex);
+			swatches.querySelectorAll(".user-settings-swatch").forEach(s => s.classList.remove("active"));
+			swatch.classList.add("active");
+			// Update the popup header avatar live
+			avatarWrap.innerHTML = "";
+			avatarWrap.appendChild(buildUserAvatar(user, "user-settings-avatar"));
+			renderProjects();
+		});
+		swatches.appendChild(swatch);
+	});
+
+	colorSection.appendChild(colorLabel);
+	colorSection.appendChild(swatches);
+	popup.appendChild(colorSection);
+
+	// ── Divider ──
+	const div2 = document.createElement("div");
+	div2.classList.add("user-settings-divider");
+	popup.appendChild(div2);
+
+	// ── Sign out ──
+	const signOutBtn = document.createElement("button");
+	signOutBtn.classList.add("user-settings-signout");
+	signOutBtn.textContent = "Sign out";
+	signOutBtn.addEventListener("click", () => signOut());
+	popup.appendChild(signOutBtn);
+
+	document.body.appendChild(popup);
+
+	// Position above anchor
+	const rect = anchorEl.getBoundingClientRect();
+	popup.style.left = `${rect.left}px`;
+	popup.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+	// Clamp to viewport width
+	const popupWidth = 220;
+	const maxLeft = window.innerWidth - popupWidth - 8;
+	popup.style.left = `${Math.min(rect.left, maxLeft)}px`;
+
+	// Close on outside click
+	function onOutside(e) {
+		if (!popup.contains(e.target) && !anchorEl.contains(e.target)) {
+			popup.remove();
+			document.removeEventListener("click", onOutside, true);
+		}
+	}
+	setTimeout(() => document.addEventListener("click", onOutside, true), 0);
 }
 
 /* ======================
