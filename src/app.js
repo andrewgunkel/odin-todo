@@ -266,7 +266,7 @@ function renderProjects() {
 
 	const appName = document.createElement("span");
 	appName.classList.add("sidebar-app-name");
-	appName.textContent = "My Todos";
+	appName.textContent = "Todoroki";
 
 	const sidebarCloseBtn = document.createElement("button");
 	sidebarCloseBtn.classList.add("sidebar-close-btn");
