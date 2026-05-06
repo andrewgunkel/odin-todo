@@ -53,6 +53,7 @@ let selectionOverlay = null;
 let epicFilterIds = new Set(); // empty = show all
 let lastEpicFilterProjectId = null;
 let dragHoverTimer = null;
+let syncTimer = null;
 
 function showColumnDeleteModal(col) {
 	const others = columns.filter(c => c.id !== col.id);
@@ -309,87 +310,246 @@ let columns = [
 ];
 
 /* ======================
-   STORAGE
+   STORAGE  (Supabase-backed, fire-and-forget)
 ====================== */
 
+// Debounced entry points — all 80+ call sites remain unchanged
 function saveProjects() {
-	localStorage.setItem("projects", JSON.stringify(projects));
-}
-
-function saveColumns() {
-	localStorage.setItem("columns", JSON.stringify(columns));
-}
-
-function loadColumns() {
-	const stored = localStorage.getItem("columns");
-	if (stored) columns = JSON.parse(stored);
+	if (!currentUser) return;
+	clearTimeout(syncTimer);
+	syncTimer = setTimeout(syncAllToSupabase, 400);
 }
 
 function saveInbox() {
-	localStorage.setItem("inbox", JSON.stringify(inbox));
+	if (!currentUser) return;
+	clearTimeout(syncTimer);
+	syncTimer = setTimeout(syncAllToSupabase, 400);
 }
 
-function loadInbox() {
-	const stored = localStorage.getItem("inbox");
-	if (!stored) return;
-	const parsed = JSON.parse(stored);
-	parsed.forEach(todo => {
-		if (typeof todo.checklist === "string") {
-			todo.checklist = todo.checklist.split(",").map(item => ({ text: item.trim(), completed: false }));
+function saveColumns() {
+	if (!currentUser) return;
+	syncColumnsToSupabase();
+}
+
+// ── Helpers ────────────────────────────────────────────────
+
+function buildProjectRow(project, index) {
+	return {
+		id: project.id,
+		user_id: currentUser.id,
+		title: project.title,
+		description: project.description || "",
+		sort_order: index,
+		epics: project.epics || [],
+		resources: project.resources || { notes: "" },
+		no_epic_collapsed: project.noEpicCollapsed || false,
+	};
+}
+
+function buildTodoRow(todo, projectId, index) {
+	return {
+		id: todo.id,
+		user_id: currentUser.id,
+		project_id: projectId,
+		title: todo.title,
+		description: todo.description || "",
+		due_date: todo.dueDate || "",
+		priority: todo.priority || "Low",
+		notes: todo.notes || "",
+		checklist: todo.checklist || [],
+		reference_link: todo.referenceLink || "",
+		status: todo.status || "",
+		epic_id: todo.epicId || null,
+		sort_order: index,
+		created_at: todo.createdAt || Date.now(),
+		updated_at: todo.updatedAt || Date.now(),
+	};
+}
+
+// ── Full sync (projects + all todos + inbox) ───────────────
+
+async function syncAllToSupabase() {
+	if (!currentUser) return;
+	const uid = currentUser.id;
+
+	try {
+		// 1. Upsert all projects
+		const projectRows = projects.map((p, i) => buildProjectRow(p, i));
+		if (projectRows.length > 0) {
+			const { error } = await supabase.from("projects").upsert(projectRows, { onConflict: "id" });
+			if (error) throw error;
 		}
-		if (!Array.isArray(todo.checklist)) todo.checklist = [];
-		if (!('epicId' in todo)) todo.epicId = null;
-	});
-	inbox.push(...parsed);
+
+		// 2. Remove projects the user deleted
+		const keepProjectIds = projectRows.map(p => p.id);
+		if (keepProjectIds.length > 0) {
+			await supabase.from("projects").delete()
+				.eq("user_id", uid)
+				.not("id", "in", `(${keepProjectIds.join(",")})`);
+		} else {
+			await supabase.from("projects").delete().eq("user_id", uid);
+		}
+
+		// 3. Upsert all project todos
+		const todoRows = projects.flatMap((p) =>
+			p.todos.map((t, i) => buildTodoRow(t, p.id, i))
+		);
+		if (todoRows.length > 0) {
+			const { error } = await supabase.from("todos").upsert(todoRows, { onConflict: "id" });
+			if (error) throw error;
+		}
+
+		// 4. Remove project todos that no longer exist (not inbox)
+		const keepTodoIds = todoRows.map(t => t.id);
+		if (keepTodoIds.length > 0) {
+			await supabase.from("todos").delete()
+				.eq("user_id", uid)
+				.not("project_id", "is", null)
+				.not("id", "in", `(${keepTodoIds.join(",")})`);
+		} else {
+			await supabase.from("todos").delete()
+				.eq("user_id", uid)
+				.not("project_id", "is", null);
+		}
+
+		// 5. Upsert inbox todos
+		const inboxRows = inbox.map((t, i) => buildTodoRow(t, null, i));
+		if (inboxRows.length > 0) {
+			const { error } = await supabase.from("todos").upsert(inboxRows, { onConflict: "id" });
+			if (error) throw error;
+		}
+
+		// 6. Remove inbox todos that no longer exist
+		const keepInboxIds = inboxRows.map(t => t.id);
+		if (keepInboxIds.length > 0) {
+			await supabase.from("todos").delete()
+				.eq("user_id", uid)
+				.is("project_id", null)
+				.not("id", "in", `(${keepInboxIds.join(",")})`);
+		} else {
+			await supabase.from("todos").delete()
+				.eq("user_id", uid)
+				.is("project_id", null);
+		}
+	} catch (err) {
+		console.error("Supabase sync error:", err);
+	}
 }
 
-function loadProjects() {
-	const stored = localStorage.getItem("projects");
-	if (!stored) return;
+// ── Column config sync ─────────────────────────────────────
 
-	const parsed = JSON.parse(stored);
+async function syncColumnsToSupabase() {
+	if (!currentUser) return;
+	try {
+		const { error } = await supabase.from("user_columns").upsert(
+			{ user_id: currentUser.id, data: columns, updated_at: new Date().toISOString() },
+			{ onConflict: "user_id" }
+		);
+		if (error) throw error;
+	} catch (err) {
+		console.error("Supabase columns sync error:", err);
+	}
+}
 
-	parsed.forEach(project => {
-		Object.setPrototypeOf(project, Project.prototype);
-		if (!project.epics) project.epics = [];
-		project.epics.forEach(epic => { if (!epic.extraColumns) epic.extraColumns = []; });
-		if (!project.resources) project.resources = { notes: "" };
+// ── Load all data for the signed-in user ──────────────────
 
-		project.todos.forEach(todo => {
-			if (typeof todo.checklist === "string") {
-				todo.checklist = todo.checklist
-					.split(",")
-					.map(item => ({ text: item.trim(), completed: false }));
-			}
-			if (!Array.isArray(todo.checklist)) todo.checklist = [];
-			if (!('epicId' in todo)) todo.epicId = null;
+async function loadFromSupabase() {
+	const uid = currentUser.id;
+
+	// Columns
+	const { data: colRow } = await supabase
+		.from("user_columns")
+		.select("data")
+		.eq("user_id", uid)
+		.maybeSingle();
+	if (colRow?.data?.length) columns = colRow.data;
+
+	// Projects (ordered)
+	const { data: projectRows, error: pe } = await supabase
+		.from("projects")
+		.select("*")
+		.eq("user_id", uid)
+		.order("sort_order");
+	if (pe) throw pe;
+
+	// All todos for this user (ordered)
+	const { data: todoRows, error: te } = await supabase
+		.from("todos")
+		.select("*")
+		.eq("user_id", uid)
+		.order("sort_order");
+	if (te) throw te;
+
+	// Reconstruct in-memory structure
+	projects.length = 0;
+	inbox.length = 0;
+
+	(projectRows || []).forEach(row => {
+		const project = Object.create(Project.prototype);
+		Object.assign(project, {
+			id: row.id,
+			title: row.title,
+			description: row.description,
+			sort_order: row.sort_order,
+			epics: row.epics || [],
+			resources: row.resources || { notes: "" },
+			noEpicCollapsed: row.no_epic_collapsed || false,
+			todos: [],
 		});
+		project.epics.forEach(e => { if (!e.extraColumns) e.extraColumns = []; });
+		projects.push(project);
 	});
 
-	projects.push(...parsed);
-	currentProjectId = projects[0]?.id;
+	(todoRows || []).forEach(row => {
+		const todo = {
+			id: row.id,
+			title: row.title,
+			description: row.description,
+			dueDate: row.due_date,
+			priority: row.priority,
+			notes: row.notes,
+			checklist: Array.isArray(row.checklist) ? row.checklist : [],
+			referenceLink: row.reference_link,
+			status: row.status,
+			epicId: row.epic_id || null,
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		};
+		if (row.project_id) {
+			const project = projects.find(p => p.id === row.project_id);
+			if (project) project.todos.push(todo);
+		} else {
+			inbox.push(todo);
+		}
+	});
+
+	currentProjectId = projects[0]?.id ?? null;
 }
 
 /* ======================
    INIT
 ====================== */
 
-loadProjects();
-loadColumns();
-loadInbox();
-
-if (projects.length === 0) {
-	const defaultProject = new Project("Default", "Default project");
-	defaultProject.epics = [];
-	defaultProject.resources = { notes: "" };
-	projects.push(defaultProject);
-	currentProjectId = defaultProject.id;
-	saveProjects();
-}
-
-// getSession reads from localStorage — no network, no flash
-supabase.auth.getSession().then(({ data: { session } }) => {
+supabase.auth.getSession().then(async ({ data: { session } }) => {
 	currentUser = session?.user ?? null;
+
+	if (currentUser) {
+		try {
+			await loadFromSupabase();
+		} catch (err) {
+			console.error("Failed to load data from Supabase:", err);
+		}
+
+		if (projects.length === 0) {
+			const defaultProject = new Project("Default", "");
+			defaultProject.epics = [];
+			defaultProject.resources = { notes: "" };
+			projects.push(defaultProject);
+			currentProjectId = defaultProject.id;
+			saveProjects();
+		}
+	}
+
 	renderProjects();
 	renderTodos();
 });
