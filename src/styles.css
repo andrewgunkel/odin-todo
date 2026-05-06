@@ -130,6 +130,62 @@ body {
     color: #d32f2f;
 }
 
+.move-project-btn {
+    background: transparent;
+    border: none;
+    color: #bdbdbd;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 3px 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.move-project-btn::before {
+    content: "↗";
+}
+
+.todo-card:hover .move-project-btn {
+    opacity: 1;
+}
+
+.move-project-btn:hover {
+    background: #e8f0fe;
+    color: var(--palette-dark);
+}
+
+.move-project-select {
+    font-size: 0.75rem;
+    font-family: inherit;
+    border: 1px solid var(--md-field-border);
+    border-radius: 6px;
+    background: var(--md-card-surface);
+    color: var(--md-input-color);
+    padding: 2px 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 120px;
+}
+
+.move-project-select:focus {
+    outline: none;
+    border-color: var(--palette-dark);
+}
+
+[data-theme="dark"] .move-project-btn:hover {
+    background: rgba(157, 143, 255, 0.15);
+    color: #9d8fff;
+}
+
+[data-theme="dark"] .move-project-select {
+    background: #1c1b26;
+    border-color: #3a3852;
+    color: #e0deff;
+}
+
 /* ── Body text ── */
 .todo-description,
 .todo-notes {
@@ -353,6 +409,40 @@ body {
     font-size: 0.9rem;
     font-weight: 700;
     letter-spacing: 0.03em;
+    flex: 1;
+}
+
+.sidebar-close-btn {
+    display: none;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.sidebar-close-btn::before {
+    content: "✕";
+}
+
+.sidebar-close-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+@media (max-width: 640px) {
+    .sidebar-close-btn {
+        display: flex;
+    }
 }
 
 .sidebar-section-label {
@@ -1234,6 +1324,7 @@ body {
 
     #sidebar-backdrop {
         display: block;
+        pointer-events: none;
     }
 
     #sidebar-backdrop.visible {
@@ -1327,5 +1418,121 @@ body {
     #new-todo-form .form-group:nth-child(5),
     #new-todo-form .form-group:nth-child(6) {
         grid-column: span 1;
+    }
+}
+
+/* ======================
+   UNDO TOAST
+====================== */
+
+.undo-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 200;
+    width: 260px;
+
+    /* Match card styling */
+    background: var(--md-card-surface);
+    border-radius: var(--md-card-radius);
+    box-shadow: var(--md-card-shadow-raised);
+    border-left: 4px solid var(--palette-accent);
+    padding: 16px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    /* Enter/exit animation */
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.undo-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.undo-toast-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+    color: #bdbdbd;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+    line-height: 1;
+}
+
+.undo-toast-close::before {
+    content: "✕";
+}
+
+.undo-toast-close:hover {
+    background: #ffebee;
+    color: #d32f2f;
+}
+
+.undo-toast-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1c1b1f;
+    padding-right: 20px;
+}
+
+.undo-toast-body {
+    font-size: 0.85rem;
+    color: #5f6368;
+}
+
+.undo-toast-btn {
+    background: var(--md-btn-filled-bg);
+    color: var(--md-btn-filled-color);
+    border: none;
+    border-radius: 100px;
+    padding: 10px 24px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    cursor: pointer;
+    transition: box-shadow 0.15s, filter 0.15s;
+    align-self: flex-start;
+}
+
+.undo-toast-btn:hover {
+    filter: brightness(1.12);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Dark mode */
+[data-theme="dark"] .undo-toast-title {
+    color: #e0deff;
+}
+
+[data-theme="dark"] .undo-toast-body {
+    color: #9d9ab8;
+}
+
+[data-theme="dark"] .undo-toast-close:hover {
+    background: rgba(255, 107, 107, 0.15);
+    color: #ff6b6b;
+}
+
+@media (max-width: 640px) {
+    .undo-toast {
+        bottom: 16px;
+        right: 12px;
+        left: 12px;
+        width: auto;
     }
 }

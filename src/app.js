@@ -33,6 +33,64 @@ window.projects = projects;
 let sortBy = "default"; // default | priority | createdAt | updatedAt | dueDate
 let sortDir = "asc"; // asc | desc
 
+let undoState = null; // { todo, project, index }
+let undoTimer = null;
+let undoToastEl = null;
+
+function showUndoToast(todo, project, index) {
+	// Clear any existing toast
+	if (undoTimer) clearTimeout(undoTimer);
+	if (undoToastEl) undoToastEl.remove();
+
+	undoState = { todo, project, index };
+
+	const toast = document.createElement("div");
+	toast.classList.add("undo-toast");
+	undoToastEl = toast;
+
+	const closeBtn = document.createElement("button");
+	closeBtn.classList.add("undo-toast-close");
+	closeBtn.title = "Dismiss";
+
+	const title = document.createElement("h2");
+	title.classList.add("undo-toast-title");
+	title.textContent = "Card deleted";
+
+	const undoBtn = document.createElement("button");
+	undoBtn.classList.add("undo-toast-btn");
+	undoBtn.textContent = "Undo";
+
+	function dismiss() {
+		clearTimeout(undoTimer);
+		toast.classList.remove("visible");
+		toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+		undoToastEl = null;
+		undoState = null;
+	}
+
+	closeBtn.addEventListener("click", dismiss);
+
+	undoBtn.addEventListener("click", () => {
+		if (!undoState) return;
+		undoState.project.todos.splice(undoState.index, 0, undoState.todo);
+		saveProjects();
+		renderTodos();
+		dismiss();
+	});
+
+	toast.appendChild(closeBtn);
+	toast.appendChild(title);
+	toast.appendChild(undoBtn);
+	document.body.appendChild(toast);
+
+	// Trigger enter animation
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => toast.classList.add("visible"));
+	});
+
+	undoTimer = setTimeout(dismiss, 10000);
+}
+
 let columns = [
 	{ id: "col-1", label: "Not Started", isCompleted: false, color: "#6b7280" },
 	{ id: "col-2", label: "In Progress", isCompleted: false, color: "#1a73e8" },
@@ -211,8 +269,18 @@ function renderProjects() {
 	appName.classList.add("sidebar-app-name");
 	appName.textContent = "My Todos";
 
+	const sidebarCloseBtn = document.createElement("button");
+	sidebarCloseBtn.classList.add("sidebar-close-btn");
+	sidebarCloseBtn.title = "Close menu";
+	sidebarCloseBtn.setAttribute("aria-label", "Close sidebar");
+	sidebarCloseBtn.addEventListener("click", () => {
+		sidebar.classList.remove("open");
+		sidebarBackdrop.classList.remove("visible");
+	});
+
 	sidebarHeader.appendChild(icon);
 	sidebarHeader.appendChild(appName);
+	sidebarHeader.appendChild(sidebarCloseBtn);
 	sidebar.appendChild(sidebarHeader);
 
 	const sectionLabel = document.createElement("div");
@@ -668,9 +736,56 @@ function renderTodos() {
 		btnDelete.title = "Delete todo";
 
 		btnDelete.addEventListener("click", () => {
-			getCurrentProject().removeTodo(todo.id);
+			const proj = getCurrentProject();
+			const index = proj.todos.findIndex(t => t.id === todo.id);
+			proj.removeTodo(todo.id);
 			saveProjects();
 			renderTodos();
+			showUndoToast(todo, proj, index);
+		});
+
+		// MOVE TO PROJECT
+
+		const moveBtn = document.createElement("button");
+		moveBtn.classList.add("move-project-btn");
+		moveBtn.title = "Move to project";
+
+		moveBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+
+			const select = document.createElement("select");
+			select.classList.add("move-project-select");
+
+			projects.forEach(p => {
+				const opt = document.createElement("option");
+				opt.value = p.id;
+				opt.textContent = p.title;
+				if (p.id === currentProjectId) opt.selected = true;
+				select.appendChild(opt);
+			});
+
+			moveBtn.replaceWith(select);
+			select.focus();
+
+			function commitMove() {
+				const targetProjectId = select.value;
+				if (targetProjectId !== currentProjectId) {
+					const targetProject = projects.find(p => p.id === targetProjectId);
+					const validStatuses = getColumnLabels();
+					if (!validStatuses.includes(todo.status)) {
+						todo.status = validStatuses.find(l => l.toLowerCase().includes("progress")) || validStatuses[0];
+					}
+					getCurrentProject().removeTodo(todo.id);
+					targetProject.addTodo(todo);
+					saveProjects();
+					renderTodos();
+				} else {
+					select.replaceWith(moveBtn);
+				}
+			}
+
+			select.addEventListener("change", commitMove);
+			select.addEventListener("blur", () => select.replaceWith(moveBtn));
 		});
 
 		// HEADER (title + delete)
@@ -678,6 +793,7 @@ function renderTodos() {
 		const todoHeader = document.createElement("div");
 		todoHeader.classList.add("todo-header");
 		todoHeader.appendChild(todoTitle);
+		todoHeader.appendChild(moveBtn);
 		todoHeader.appendChild(btnDelete);
 
 		// META ROW (chips)
