@@ -2350,7 +2350,7 @@ body {
     align-items: flex-start;
     gap: 16px;
     padding: 24px;
-    overflow-x: auto;
+    overflow-x: hidden;
 }
 
 .inbox-col {
