@@ -55,6 +55,9 @@ let lastEpicFilterProjectId = null;
 let dragHoverTimer = null;
 let syncTimer = null;
 
+// Cross-device user preferences — loaded from Supabase after auth
+let userPrefs = { theme: "light", avatarColor: null, displayName: "" };
+
 function showColumnDeleteModal(col) {
 	const others = columns.filter(c => c.id !== col.id);
 
@@ -331,6 +334,49 @@ function saveColumns() {
 	syncColumnsToSupabase();
 }
 
+// ── User preferences (theme / avatarColor / displayName) ──
+
+async function loadUserPrefs() {
+	const { data } = await supabase
+		.from("user_preferences")
+		.select("*")
+		.eq("user_id", currentUser.id)
+		.maybeSingle();
+
+	if (data) {
+		userPrefs.theme = data.theme || "light";
+		userPrefs.avatarColor = data.avatar_color || null;
+		userPrefs.displayName = data.display_name || "";
+	} else {
+		// First login on this device — migrate from localStorage then save
+		const localTheme = localStorage.getItem("theme");
+		const localColor = localStorage.getItem("userAvatarColor");
+		const localName  = localStorage.getItem("userDisplayName");
+		if (localTheme) userPrefs.theme = localTheme;
+		if (localColor) userPrefs.avatarColor = localColor;
+		if (localName)  userPrefs.displayName = localName;
+		await saveUserPrefs();
+	}
+}
+
+async function saveUserPrefs() {
+	if (!currentUser) return;
+	try {
+		await supabase.from("user_preferences").upsert(
+			{
+				user_id:      currentUser.id,
+				theme:        userPrefs.theme,
+				avatar_color: userPrefs.avatarColor,
+				display_name: userPrefs.displayName,
+				updated_at:   new Date().toISOString(),
+			},
+			{ onConflict: "user_id" }
+		);
+	} catch (err) {
+		console.error("Supabase prefs sync error:", err);
+	}
+}
+
 // ── Helpers ────────────────────────────────────────────────
 
 function buildProjectRow(project, index) {
@@ -535,6 +581,8 @@ supabase.auth.getSession().then(async ({ data: { session } }) => {
 
 	if (currentUser) {
 		try {
+			await loadUserPrefs();
+			applyTheme(userPrefs.theme); // override the localStorage-cached theme
 			await loadFromSupabase();
 		} catch (err) {
 			console.error("Failed to load data from Supabase:", err);
@@ -2814,21 +2862,21 @@ const AVATAR_COLORS = [
 ];
 
 function getUserDisplayName(user) {
-	return localStorage.getItem("userDisplayName") ||
+	return userPrefs.displayName ||
 		user.user_metadata?.name ||
 		user.user_metadata?.full_name ||
 		user.email || "User";
 }
 
 function getAvatarColor() {
-	return localStorage.getItem("userAvatarColor") || "#FCFF4B";
+	return userPrefs.avatarColor || "#FCFF4B";
 }
 
 function buildUserAvatar(user, sizeClass) {
 	const avatar = document.createElement("div");
 	avatar.classList.add(sizeClass);
 	const color = getAvatarColor();
-	const hasCustomColor = localStorage.getItem("userAvatarColor") !== null;
+	const hasCustomColor = userPrefs.avatarColor !== null;
 
 	if (!hasCustomColor && user.user_metadata?.avatar_url) {
 		// Show Google photo only when no custom colour chosen
@@ -2923,7 +2971,8 @@ function openUserSettings(anchorEl, user) {
 	nameInput.addEventListener("blur", () => {
 		const val = nameInput.value.trim();
 		if (val) {
-			localStorage.setItem("userDisplayName", val);
+			userPrefs.displayName = val;
+			saveUserPrefs();
 			renderProjects();
 		}
 	});
@@ -2947,7 +2996,8 @@ function openUserSettings(anchorEl, user) {
 		if (hex === getAvatarColor()) swatch.classList.add("active");
 		swatch.addEventListener("click", (e) => {
 			e.stopPropagation();
-			localStorage.setItem("userAvatarColor", hex);
+			userPrefs.avatarColor = hex;
+			saveUserPrefs();
 			swatches.querySelectorAll(".user-settings-swatch").forEach(s => s.classList.remove("active"));
 			swatch.classList.add("active");
 			// Update the popup header avatar live
@@ -3018,7 +3068,9 @@ applyTheme(localStorage.getItem("theme") || "light");
 themeToggleBtn.addEventListener("click", () => {
 	const isDark = document.documentElement.dataset.theme === "dark";
 	const next = isDark ? "light" : "dark";
-	localStorage.setItem("theme", next);
+	userPrefs.theme = next;
+	saveUserPrefs();
+	localStorage.setItem("theme", next); // fast re-load cache
 	applyTheme(next);
 });
 
